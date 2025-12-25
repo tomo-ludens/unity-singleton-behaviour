@@ -14,7 +14,7 @@ namespace Foundation
     /// Lookup uses <see cref="Object.FindAnyObjectByType{T}()"/> and therefore does not return assets,
     /// inactive objects, or objects with <see cref="HideFlags.DontSave"/> set.
     /// </remarks>
-    public abstract class SingletonBehaviour<T> : MonoBehaviour where T : MonoBehaviour
+    public abstract class SingletonBehaviour<T> : MonoBehaviour where T : SingletonBehaviour<T>
     {
         /// <summary>
         /// Cached singleton instance for this closed generic type (one per T).
@@ -106,6 +106,17 @@ namespace Foundation
             }
 
             _instance = this as T;
+
+            if (_instance == null)
+            {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                Debug.LogError(
+                    message: $"[{GetType().Name}] must inherit SingletonBehaviour<{GetType().Name}>, not SingletonBehaviour<{typeof(T).Name}>."
+                );
+#endif
+                Destroy(this.gameObject);
+                return;
+            }
 
             if (this.transform.parent != null)
             {
