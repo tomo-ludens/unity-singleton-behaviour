@@ -2,21 +2,26 @@
 
 [Japanese](./README.md) | [English](../en/README.md)
 
-MonoBehaviour 向けの **型別（Type-per-singleton）シングルトン基底クラス**です。
+MonoBehaviour 向けの **ポリシー駆動型シングルトン基底クラス** です。
 
 Unity 6.3（6000.3 系）以降での利用を想定しています。
 
 ## Overview ✨
 
-`SingletonBehaviour<T>` は次の機能を提供します：
+本ライブラリは 2 種類のシングルトン基底クラスを提供します：
+
+| クラス | 永続化 | 自動生成 | 用途 |
+| --- | --- | --- | --- |
+| `PersistentSingletonBehaviour<T>` | ✅ `DontDestroyOnLoad` | ✅ する | ゲーム全体で生存するマネージャ |
+| `SceneSingletonBehaviour<T>` | ❌ しない | ❌ しない | シーン固有のコントローラ |
+
+共通機能：
 
 - 🧩 **型ごとのシングルトン保証**（`GameManager` と `AudioManager` は別インスタンス）
 - 🛡️ **型安全な継承**（CRTP 風制約 + ランタイムガードで誤用を検出）
-- 🕰️ **遅延生成**（`Instance` アクセス時に未存在なら自動生成）
-- 🔁 **シーン永続化**（`DontDestroyOnLoad`）
 - 🧯 **終了時の安全性**（`Application.quitting` を考慮し、終了中の再生成を抑止）
 - ⚙️ **Domain Reload 無効対応**（Play セッション識別子で型ごとの static キャッシュを無効化）
-- 🧱 **誤配置への実用的な耐性**（子オブジェクト配置でも root に移動して永続化）
+- 🧱 **誤配置への実用的な耐性**（子オブジェクト配置でも root に移動して永続化 ※Persistent のみ）
 - 🧼 **ソフトリセット指向**（Play ごとに `OnSingletonAwake()` を走らせ、同一個体でも再初期化できる設計）
 - 🖥️ **Edit Mode 安全**（Edit Mode では検索のみ、static キャッシュに副作用なし）
 - 🎯 **厳密な型チェック**（派生型を拒否し、T が実体型であることを強制）
@@ -31,115 +36,76 @@ Unity 6.3（6000.3 系）以降での利用を想定しています。
 
 ## Installation 📦
 
-- `SingletonBehaviour<T>` と `SingletonRuntime` をプロジェクトに追加します（例：`Assets/Foundation/Singletons/`）。
+- `Singletons/` フォルダをプロジェクトに追加します（例：`Assets/Plugins/Singletons/`）。
 - 名前空間はプロジェクト方針に合わせて調整してください。
 
 ### 名前空間のインポート
 ```csharp
-using Foundation.Singletons;
+using Singletons;
 ```
 
-## Design Intent（設計意図）🧠
+## Usage 🚀
 
-### なぜ CRTP 制約を使うのか？
+### 1) 永続シングルトン（PersistentSingletonBehaviour）
 
-`SingletonBehaviour<T>` は以下の型制約を持ちます：
+シーンを跨いで生存し、未配置なら自動生成されます。
+
 ```csharp
-public abstract class SingletonBehaviour<T> : MonoBehaviour
-    where T : SingletonBehaviour<T>
-```
+using Singletons;
 
-これにより、誤った継承パターンがコンパイル時に検出されます：
-```csharp
-// ✅ 正しい実装
-public sealed class GameManager : SingletonBehaviour<GameManager> { }
-
-// ❌ コンパイルエラー（CS0311）
-public sealed class A : SingletonBehaviour<B> { }
-```
-
-ただし C# の制約だけでは「誤って別型を指定した」などのケースを 100% 防ぎ切れないため、
-**ランタイムガード**（`this as T` の検証）も併用して、運用上の事故を早期に検出します。
-
-### なぜ `SingletonRuntime` が必要なのか？
-
-Domain Reload を無効化すると、**static フィールドや static イベントのハンドラが Play 間で残留**し得ます。
-
-この "残留" を前提に、Play セッションの開始ごとに **型ごとの static キャッシュを無効化**する必要があります。
-
-そのため、
-
-* Play 開始時に確実に呼ばれる非ジェネリックな場所で `PlaySessionId` を更新する（`SubsystemRegistration`）
-* `SingletonBehaviour<T>` 側は `PlaySessionId` を参照して **キャッシュを無効化**する
-
-という責務分離を行っています。
-
-> 補足：Unity では「ジェネリック型内の `[RuntimeInitializeOnLoadMethod]` が期待どおり呼ばれない」ケースが知られており、
-> その回避として非ジェネリック側に初期化を集約する設計は実用上有効です（Issue Tracker 参照）。
-
-### Play セッション検出の仕組み
-
-* 非ジェネリックな `SingletonRuntime.SubsystemRegistration`（`RuntimeInitializeLoadType.SubsystemRegistration`）が Play 開始前に必ず呼ばれる前提で、ここで `PlaySessionId` をインクリメント
-* 同一フレーム内で二重に呼ばれた場合も `Time.frameCount` でガードして一度だけカウント
-* `SingletonBehaviour<T>` 側は `PlaySessionId` を参照し、Play ごとに static キャッシュを無効化
-* 初期化順が遅延した場合でも、`EnsureInitializedForCurrentPlaySession` がフォールバックしてフックを張り直し、`SynchronizationContext` が存在するときのみメインスレッド ID を遅延捕捉
-
-### DontDestroyOnLoad の呼び出し管理
-
-`DontDestroyOnLoad` は同一オブジェクトに複数回呼んでも問題ありませんが、
-本実装では `_isPersistent` フラグで呼び出しを1回に制限し、不要な処理を回避しています。
-
-## Dependencies（本実装が依存する Unity API の挙動）🔍
-
-| API                                                          | 挙動（デフォルト）                                                          |
-| ------------------------------------------------------------ | ------------------------------------------------------------------ |
-| `Object.FindAnyObjectByType<T>(FindObjectsInactive.Exclude)` | **Assets / 非アクティブ / `HideFlags.DontSave` を返さない**（戻り値は呼び出し間で保証されない） |
-| `Object.DontDestroyOnLoad()`                                 | **root GameObject（または root 上の Component）でのみ有効**                    |
-| `Application.quitting`                                       | **Editor の Play Mode 終了時にも発火**。Android では pause 中に検出されない場合がある      |
-| `RuntimeInitializeLoadType.SubsystemRegistration`            | **最初のシーンロード前**に呼ばれる（ただし実行順は不定）                                     |
-| `Time.frameCount`                                            | **Play Mode 開始時に 0 にリセット**。二重初期化ガードに利用                         |
-| `Application.isPlaying`                                      | **Play Mode では `true`、Edit Mode では `false`**                       |
-| Domain Reload 無効                                             | **static フィールド値 / static イベントハンドラが Play 間で残留**                     |
-| Scene Reload 無効                                              | **`OnEnable` / `OnDisable` / `OnDestroy` 等は "新規ロード同様に呼ばれる"**       |
-
-## Public API 📌
-
-### `static T Instance { get; }`
-
-必須依存向け。シングルトンインスタンスを返します。未存在の場合は **検索 → 無ければ自動生成**します。終了中（quitting）やバックグラウンドスレッドでは `null` を返します。DEV/EDITOR では非アクティブが存在する場合に自動生成をブロック（例外）し、実体型が T と厳密一致しない候補は拒否します。
-```csharp
-GameManager.Instance.AddScore(10);
-```
-
-| 状態         | 戻り値             |
-| ---------- | --------------- |
-| インスタンス存在   | キャッシュ済みインスタンス   |
-| 未存在        | 検索 → 無ければ生成して返却 |
-| quitting 中 | `null`          |
-| Edit Mode  | 検索のみ（生成・キャッシュなし） |
-| 非アクティブが存在（DEV/EDITOR） | 例外（重複を防止） |
-| 派生型が見つかった | `null`（破棄／拒否） |
-
-### `static bool TryGetInstance(out T instance)`
-
-任意依存向け。インスタンスが存在すれば取得します。**生成は行いません**。終了中（quitting）やバックグラウンドスレッドでは `false` を返します。実体型が T と厳密一致しない候補は拒否します。
-```csharp
-if (AudioManager.TryGetInstance(out var am))
+public sealed class GameManager : PersistentSingletonBehaviour<GameManager>
 {
-    am.PlaySe("click");
+    public int Score { get; private set; }
+
+    protected override void OnSingletonAwake()
+    {
+        // Play セッションごとに走る初期化
+        this.Score = 0;
+    }
+
+    public void AddScore(int value) => this.Score += value;
+
+    protected override void OnSingletonDestroy()
+    {
+        // 実体が破棄されるタイミングでの後始末
+    }
 }
 ```
 
-| 状態         | 戻り値     | `instance` |
-| ---------- | ------- | ---------- |
-| インスタンス存在   | `true`  | 有効な参照      |
-| 未存在        | `false` | `null`     |
-| quitting 中 | `false` | `null`     |
-| Edit Mode  | 検索結果    | 検索のみ（キャッシュなし） |
-| 派生型が見つかった | `false` | `null`（拒否）  |
+### 2) シーンスコープシングルトン（SceneSingletonBehaviour）
 
-**典型ユースケース：終了処理での「うっかり生成」を防止 🧹**
+シーンに配置必須。シーンアンロードで破棄され、自動生成されません。
+
 ```csharp
+using Singletons;
+
+public sealed class LevelController : SceneSingletonBehaviour<LevelController>
+{
+    protected override void OnSingletonAwake()
+    {
+        // シーンごとの初期化
+    }
+}
+```
+
+> ⚠️ **未配置で `Instance` を呼ぶと DEV/EDITOR では例外**、Player では `null` を返します。
+
+### 3) `Instance` / `TryGetInstance` の使い分け
+
+| 項目 | 推奨 |
+| --- | --- |
+| クラス修飾子 | `sealed`（意図しない継承事故を防ぐ） |
+| 初期化処理 | `OnSingletonAwake()` に記述（Play ごとの再初期化） |
+| 破棄処理 | `OnSingletonDestroy()` に記述（破棄時のみ） |
+
+* ✅ **Instance**：その依存が「必ず必要」なとき（Persistent なら無ければ作ってでも動かす）
+  例：`GameManager`, `AudioManager` などゲーム進行に必須のマネージャ
+
+* ✅ **TryGetInstance**：「あるなら使う」「無いなら何もしない」「終了処理で増やしたくない」
+  例：`OnDisable` / `OnDestroy` / `OnApplicationPause` などの後片付け、任意機能の登録解除
+
+```csharp
+// 終了処理での安全なパターン
 private void OnDisable()
 {
     if (AudioManager.TryGetInstance(out var am))
@@ -149,58 +115,13 @@ private void OnDisable()
 }
 ```
 
-## Usage 🚀
-
-### 1) 派生クラスの定義
-```csharp
-using Foundation.Singletons;
-
-public sealed class GameManager : SingletonBehaviour<GameManager>
-{
-    public int Score { get; private set; }
-
-    protected override void OnSingletonAwake()
-    {
-        // Playごとに確実に初期化したい処理
-        this.Score = 0;
-    }
-
-    public void AddScore(int value) => this.Score += value;
-
-    protected override void OnSingletonDestroy()
-    {
-        // 本当に破棄されるタイミングでの後始末（リソース解放、イベント解除など）
-    }
-}
-```
-
-| 項目     | 推奨                                     |
-| ------ | -------------------------------------- |
-| クラス修飾子 | `sealed`（意図しない継承事故を防ぐ）                 |
-| 初期化処理  | `OnSingletonAwake()` に記述（Play ごとの再初期化） |
-| 破棄処理   | `OnSingletonDestroy()` に記述（破棄時のみ）      |
-
----
-
-### 2) `Instance` / `TryGetInstance` の使い分け
-
-* ✅ **Instance**：その依存が「必ず必要」なとき（無ければ作ってでも動かす）
-  例：`GameManager`, `InputManager` などゲーム進行に必須のマネージャ
-
-* ✅ **TryGetInstance**：「あるなら使う」「無いなら何もしない」「終了処理で増やしたくない」
-  例：`OnDisable` / `OnDestroy` / `OnApplicationPause` などの後片付け、任意機能の登録解除
-
-> DEV/EDITOR では非アクティブが存在する場合に `Instance` が例外でブロックされます。終了処理や任意依存には `TryGetInstance` を使うと安全です。
-
----
-
-### 3) アクセスパターン（キャッシュ徹底）🧠
+### 4) アクセスパターン（キャッシュ徹底）🧠
 
 ❌ **毎フレーム `Instance` を呼ぶのは非推奨**です。探索が走る可能性があるため、初回に取得してキャッシュし、以降は参照を使うのが基本です。
 
 ✅ 推奨：初回に取得してキャッシュ
 ```csharp
-using Foundation.Singletons;
+using Singletons;
 using UnityEngine;
 
 public sealed class ScoreHUD : MonoBehaviour
@@ -220,51 +141,118 @@ public sealed class ScoreHUD : MonoBehaviour
 }
 ```
 
-## Soft Reset（Playごとの安全な再初期化）🧼
+## Public API 📌
 
-本実装は「同一個体を再利用しつつ、Play ごとに初期化を走らせる」運用を強く意識しています。
+### `static T Instance { get; }`
 
-Domain Reload 無効では static 状態や static イベント購読が残留し得るため、`OnSingletonAwake()` は **再実行に耐える（idempotent）** 書き方が安全です。
+シングルトンインスタンスを返します。
 
-> 実務上のコツ：static イベント購読は「解除→登録」の形にしておくと、Domain Reload 無効時の二重購読を潰しやすくなります。
+| 状態 | Persistent | Scene |
+| --- | --- | --- |
+| インスタンス存在 | キャッシュ済みインスタンス | キャッシュ済みインスタンス |
+| 未存在 | 検索 → 無ければ**自動生成** | 検索 → 無ければ **例外(DEV/EDITOR)** or `null`(Player) |
+| quitting 中 | `null` | `null` |
+| Edit Mode | 検索のみ（生成・キャッシュなし） | 検索のみ（生成・キャッシュなし） |
+| 非アクティブが存在（DEV/EDITOR） | 例外（重複を防止） | 例外（重複を防止） |
+| 派生型が見つかった | `null`（Play: 破棄、Edit: ログのみ） | `null`（Play: 破棄、Edit: ログのみ） |
+
+### `static bool TryGetInstance(out T instance)`
+
+インスタンスが存在すれば取得します。**生成は行いません**。
+
+| 状態 | 戻り値 | `instance` |
+| --- | --- | --- |
+| インスタンス存在 | `true` | 有効な参照 |
+| 未存在 | `false` | `null` |
+| quitting 中 | `false` | `null` |
+| Edit Mode | 検索結果 | 検索のみ（キャッシュなし） |
+| 派生型が見つかった | `false` | `null`（Play: 破棄、Edit: ログのみ） |
+
+## Design Intent（設計意図）🧠
+
+### なぜポリシーパターンを使うのか？
+
+シングルトンの挙動（永続化・自動生成）をポリシーで分離することで、同じコアロジックを共有しつつ用途別のクラスを提供しています。
+
+```csharp
+public interface ISingletonPolicy
+{
+    bool PersistAcrossScenes { get; }
+    bool AutoCreateIfMissing { get; }
+}
+```
+
+### なぜ `SingletonRuntime` が必要なのか？
+
+Domain Reload を無効化すると、**static フィールドや static イベントのハンドラが Play 間で残留**し得ます。
+
+この "残留" を前提に、Play セッションの開始ごとに **型ごとの static キャッシュを無効化**する必要があります。
+
+そのため、
+
+* Play 開始時に確実に呼ばれる非ジェネリックな場所で `PlaySessionId` を更新する（`SubsystemRegistration`）
+* `SingletonBehaviour<T, TPolicy>` 側は `PlaySessionId` を参照して **キャッシュを無効化**する
+
+という責務分離を行っています。
+
+> 補足：Unity では「ジェネリック型内の `[RuntimeInitializeOnLoadMethod]` が期待どおり呼ばれない」ケースが知られており、
+> その回避として非ジェネリック側に初期化を集約する設計は実用上有効です（Issue Tracker 参照）。
+
+### DontDestroyOnLoad の呼び出し管理
+
+`DontDestroyOnLoad` は同一オブジェクトに複数回呼んでも問題ありませんが、
+本実装では `_isPersistent` フラグで呼び出しを1回に制限し、不要な処理を回避しています。
 
 ## Constraints（重要な制約）⚠️
 
-### ❌ 派生クラスで `Awake()` / `OnEnable()` / `OnDestroy()` を定義しない
+### ❌ `Awake()` / `OnEnable()` / `OnDestroy()` をオーバーライドする場合は base 呼び出し必須
 
 基底クラスの Unity メッセージ関数は以下を担当しています：
 
 * `_instance` の確立・重複排除
 * Play セッションの検出と static キャッシュ無効化
-* root 化（`DontDestroyOnLoad` の前提を満たす）
-* `DontDestroyOnLoad` の適用
-* `OnSingletonAwake` / `OnSingletonDestroy` の呼び出し制御（Playごとのソフトリセット）
+* root 化（`DontDestroyOnLoad` の前提を満たす ※Persistent のみ）
+* `DontDestroyOnLoad` の適用（※Persistent のみ）
+* `OnSingletonAwake` / `OnSingletonDestroy` の呼び出し制御
 
-派生側で `Awake()` / `OnEnable()` / `OnDestroy()` を定義すると、**基底の処理がスキップされて破綻**します。
-初期化は `OnSingletonAwake()`、破棄時処理は `OnSingletonDestroy()` を使用してください。
+派生側でこれらをオーバーライドする場合は、**必ず `base.Awake()` 等を呼び出してください**。
+推奨は `OnSingletonAwake()` / `OnSingletonDestroy()` の使用です。
 
-> Unity のメッセージ関数は `virtual/override` ではなく「名前ベース」で呼ばれるため、言語機構で完全に禁止できません。チーム規約や IDE 検査で担保してください。
+```csharp
+// OK: base を呼ぶ
+protected override void Awake()
+{
+    base.Awake();
+    // 追加処理
+}
+
+// 推奨: OnSingletonAwake を使う
+protected override void OnSingletonAwake()
+{
+    // 初期化処理
+}
+```
 
 ### ❌ 型パラメータには自分自身を指定する
 
 CRTP 制約により、以下のような誤った継承はコンパイルエラーになります：
 ```csharp
 // ❌ コンパイルエラー
-public sealed class A : SingletonBehaviour<B> { }
+public sealed class A : PersistentSingletonBehaviour<B> { }
 
 // ✅ 正しい実装
-public sealed class A : SingletonBehaviour<A> { }
+public sealed class A : PersistentSingletonBehaviour<A> { }
 ```
 
 ## Scene Placement Notes 🧱
 
-| 制約                    | 理由                               |
-| --------------------- | -------------------------------- |
-| 複数シーンに同一シングルトンを配置しない  | 初期化順で片方が Destroy される（先着が勝つ）      |
-| root GameObject が望ましい | `DontDestroyOnLoad` は root にのみ有効 |
+| 制約 | 理由 |
+| --- | --- |
+| 複数シーンに同一シングルトンを配置しない | 初期化順で片方が Destroy される（先着が勝つ） |
+| root GameObject が望ましい（Persistent） | `DontDestroyOnLoad` は root にのみ有効 |
 
-本実装は、誤って子オブジェクトに配置された場合でも **自動で root に移動**して永続化します。
-ただし意図しない移動は混乱の元になり得るため、**Editor/Development ビルドのみ**警告ログを出す運用が合理的です（本実装もその方針）。
+本実装は、誤って子オブジェクトに配置された場合でも **自動で root に移動**して永続化します（Persistent のみ）。
+ただし意図しない移動は混乱の元になり得るため、**Editor/Development ビルドのみ**警告ログを出します。
 
 ## Edit Mode Behavior 🖥️
 
@@ -274,8 +262,17 @@ Edit Mode（`Application.isPlaying == false`）では以下の動作になりま
 * **自動生成しない**
 * **static キャッシュを更新しない**（副作用ゼロ）
 * **Play セッション状態に影響しない**
+* **派生型が見つかった場合は破棄せずログのみ**（Undo/Inspector への影響を回避）
 
 これにより、エディタスクリプトやカスタムインスペクタから安全にシングルトンを参照できます。
+
+## Soft Reset（Playごとの安全な再初期化）🧼
+
+本実装は「同一個体を再利用しつつ、Play ごとに初期化を走らせる」運用を強く意識しています。
+
+Domain Reload 無効では static 状態や static イベント購読が残留し得るため、`OnSingletonAwake()` は **再実行に耐える（idempotent）** 書き方が安全です。
+
+> 実務上のコツ：static イベント購読は「解除→登録」の形にしておくと、Domain Reload 無効時の二重購読を潰しやすくなります。
 
 ## Threading / Main Thread（重要）🧵
 
@@ -286,7 +283,7 @@ Edit Mode（`Application.isPlaying == false`）では以下の動作になりま
 
 依存関係が複雑な場合、Bootstrap で順序を固定できます。
 ```csharp
-using Foundation.Singletons;
+using Singletons;
 using UnityEngine;
 
 [DefaultExecutionOrder(-10000)]
@@ -300,6 +297,19 @@ public sealed class Bootstrap : MonoBehaviour
     }
 }
 ```
+
+## Dependencies（本実装が依存する Unity API の挙動）🔍
+
+| API | 挙動（デフォルト） |
+| --- | --- |
+| `Object.FindAnyObjectByType<T>(FindObjectsInactive.Exclude)` | **Assets / 非アクティブ / `HideFlags.DontSave` を返さない** |
+| `Object.DontDestroyOnLoad()` | **root GameObject（または root 上の Component）でのみ有効** |
+| `Application.quitting` | **Editor の Play Mode 終了時にも発火**。モバイルでは OS 都合で呼ばれないケースがあり得る |
+| `RuntimeInitializeLoadType.SubsystemRegistration` | **最初のシーンロード前**に呼ばれる（ただし実行順は不定） |
+| `Time.frameCount` | **Play Mode 開始時に 0 にリセット**。二重初期化ガードに利用 |
+| `Application.isPlaying` | **Play Mode では `true`、Edit Mode では `false`** |
+| Domain Reload 無効 | **static フィールド値 / static イベントハンドラが Play 間で残留** |
+| Scene Reload 無効 | **`OnEnable` / `OnDisable` / `OnDestroy` 等は "新規ロード同様に呼ばれる"** |
 
 ## IDE Configuration（Rider / ReSharper）🧰
 
@@ -319,10 +329,9 @@ public sealed class Bootstrap : MonoBehaviour
 
 ## Platform Notes 📱
 
-### Android
+### Mobile (Android / iOS)
 
-`Application.quitting` は pause 中に検出されない場合があります。
-
+`Application.quitting` は OS 都合で呼ばれないケースがあり得ます。
 必要に応じて `OnApplicationFocus` / `OnApplicationPause` を併用してください。
 
 ## FAQ ❓
@@ -338,10 +347,10 @@ public sealed class Bootstrap : MonoBehaviour
 
 ### Q. 派生で `Awake` を書いてしまったら？
 
-基底の `Awake` が呼ばれず、`_instance` 設定・root 化・`DontDestroyOnLoad`・`OnSingletonAwake` 呼び出しがスキップされます。
-`Awake` を削除し、`OnSingletonAwake()` を使ってください（`OnEnable` / `OnDestroy` も同様）。
+`base.Awake()` を呼ばないと、`_instance` 設定・root 化・`DontDestroyOnLoad`・`OnSingletonAwake` 呼び出しがスキップされます。
+必ず `base.Awake()` を呼ぶか、`OnSingletonAwake()` を使ってください。
 
-### Q. `class A : SingletonBehaviour<B>` と書いたらどうなる？
+### Q. `class A : PersistentSingletonBehaviour<B>` と書いたらどうなる？
 
 CRTP 制約によりコンパイルエラー（CS0311）になります。型パラメータには必ず自分自身のクラスを指定してください。
 加えて、ランタイムでも誤用検出（ガード）により早期に異常を検出します。
@@ -349,10 +358,12 @@ CRTP 制約によりコンパイルエラー（CS0311）になります。型パ
 ### Q. Edit Mode で `Instance` を呼んでも安全？
 
 安全です。Edit Mode では検索のみ行い、static キャッシュの更新や自動生成は行いません。
+派生型が見つかった場合も破棄せずログ出力のみで、Undo システムや Inspector に影響を与えません。
 
-### Q. `RuntimeInitializeOnLoadMethod` の実行順が不定なのに、なぜ動く？
+### Q. SceneSingletonBehaviour で未配置だとどうなる？
 
-非ジェネリックの `SubsystemRegistration` が Play 開始前に走り、`Time.frameCount` で同一フレームの二重実行を抑止しています。加えて、`SingletonBehaviour<T>` 側で `EnsureInitializedForCurrentPlaySession` を都度呼び、初期化が遅れた場合でもフックを再設定するフォールバックを持っています。
+DEV/EDITOR では `InvalidOperationException` が発生します。Player では `null` を返します。
+シーンに必ず配置してください。
 
 ## References 📚
 
@@ -361,7 +372,7 @@ CRTP 制約によりコンパイルエラー（CS0311）になります。型パ
 * Domain Reload 無効時の挙動（static フィールド/イベントの残留）
   [https://docs.unity3d.com/6000.3/Documentation/Manual/domain-reloading.html](https://docs.unity3d.com/6000.3/Documentation/Manual/domain-reloading.html)
 * Scene Reload 無効時の挙動（OnEnable/OnDisable/OnDestroy 等の呼び出し）
-  [https://docs.unity3d.com/6000.2/Documentation/Manual/scene-reloading.html](https://docs.unity3d.com/6000.2/Documentation/Manual/scene-reloading.html)
+  [https://docs.unity3d.com/6000.3/Documentation/Manual/scene-reloading.html](https://docs.unity3d.com/6000.3/Documentation/Manual/scene-reloading.html)
 * RuntimeInitializeOnLoadMethodAttribute
   [https://docs.unity3d.com/6000.3/Documentation/ScriptReference/RuntimeInitializeOnLoadMethodAttribute.html](https://docs.unity3d.com/6000.3/Documentation/ScriptReference/RuntimeInitializeOnLoadMethodAttribute.html)
 * RuntimeInitializeLoadType.SubsystemRegistration
@@ -376,12 +387,6 @@ CRTP 制約によりコンパイルエラー（CS0311）になります。型パ
   [https://docs.unity3d.com/6000.3/Documentation/ScriptReference/Object.DontDestroyOnLoad.html](https://docs.unity3d.com/6000.3/Documentation/ScriptReference/Object.DontDestroyOnLoad.html)
 * Application.quitting
   [https://docs.unity3d.com/6000.3/Documentation/ScriptReference/Application-quitting.html](https://docs.unity3d.com/6000.3/Documentation/ScriptReference/Application-quitting.html)
-* MonoBehaviour.StopAllCoroutines
-  [https://docs.unity3d.com/6000.3/Documentation/ScriptReference/MonoBehaviour.StopAllCoroutines.html](https://docs.unity3d.com/6000.3/Documentation/ScriptReference/MonoBehaviour.StopAllCoroutines.html)
-* MonoBehaviour.CancelInvoke
-  [https://docs.unity3d.com/6000.3/Documentation/ScriptReference/MonoBehaviour.CancelInvoke.html](https://docs.unity3d.com/6000.3/Documentation/ScriptReference/MonoBehaviour.CancelInvoke.html)
-* SceneManager.sceneLoaded
-  [https://docs.unity3d.com/6000.3/Documentation/ScriptReference/SceneManagement.SceneManager-sceneLoaded.html](https://docs.unity3d.com/6000.3/Documentation/ScriptReference/SceneManagement.SceneManager-sceneLoaded.html)
 * DefaultExecutionOrder
   [https://docs.unity3d.com/6000.3/Documentation/ScriptReference/DefaultExecutionOrder.html](https://docs.unity3d.com/6000.3/Documentation/ScriptReference/DefaultExecutionOrder.html)
 * RuntimeInitializeOnLoadMethodAttribute not invoked if class is generic（1019360）

@@ -1,28 +1,32 @@
-# Unity SingletonBehaviour<T>
+# Unity SingletonBehaviour
 
 [日本語 (Japanese)](./docs/ja/README.md) | [English](./docs/en/README.md)
 
-`SingletonBehaviour<T>` は **MonoBehaviour 向けの型別（Type-per-singleton）シングルトン基底クラス**です。
+**ポリシー駆動型シングルトン基底クラス** for MonoBehaviour.
 
 特に **Enter Play Mode Options で Domain Reload を無効化した環境でも破綻しにくい**運用を目的にしています。
 
-Domain Reload 無効時は `static` が Play のたびに自動リセットされず残留し得るため、通常の “シンプルな Singleton” が壊れやすくなります。
-
 ---
 
-`SingletonBehaviour<T>` is a **type-per-singleton base class for MonoBehaviour**.
+**Policy-driven singleton base classes** for MonoBehaviour.
 
-It is designed to remain **robust even when Domain Reload is disabled** (Enter Play Mode Options).
-
-With Domain Reload disabled, `static` state can persist between play sessions, making “simple singletons” prone to breakage.
+Designed to remain **robust even when Domain Reload is disabled** (Enter Play Mode Options).
 
 ## Requirements / 動作環境
 - Unity 6.3 (6000.3.x) or later
 
+## Provided Classes / 提供クラス
+
+| Class | Persistence | Auto-create | Use Case |
+| --- | --- | --- | --- |
+| `PersistentSingletonBehaviour<T>` | ✅ `DontDestroyOnLoad` | ✅ Yes | Game-wide managers |
+| `SceneSingletonBehaviour<T>` | ❌ No | ❌ No | Scene-specific controllers |
+
 ## Features / 特長
-- ✅ 型別シングルトン（SingletonBehaviour<T>）
-- ✅ Instance（自動生成）/ TryGetInstance（生成しない）
-- ✅ DontDestroyOnLoad によるシーン跨ぎの永続化
+
+- ✅ ポリシー駆動（Persistent / Scene-scoped）
+- ✅ Instance（条件付き自動生成）/ TryGetInstance（生成しない）
+- ✅ DontDestroyOnLoad によるシーン跨ぎの永続化（Persistent のみ）
 - ✅ Domain Reload 無効（Enter Play Mode Options）でも安全な設計
 - ✅ Application.quitting を考慮した終了時の安全性
 - ✅ CRTP 風制約 + ランタイムガードで誤用を検出
@@ -31,9 +35,10 @@ With Domain Reload disabled, `static` state can persist between play sessions, m
 - ✅ 公開 API は Play 中メインスレッドを強制
 
 ---
-- ✅ Type-per-singleton (SingletonBehaviour<T>)
-- ✅ Instance (auto-creates) / TryGetInstance (no creation)
-- ✅ Persistent across scenes via DontDestroyOnLoad
+
+- ✅ Policy-driven (Persistent / Scene-scoped)
+- ✅ Instance (conditional auto-create) / TryGetInstance (no creation)
+- ✅ Persistent across scenes via DontDestroyOnLoad (Persistent only)
 - ✅ Safe design even with Domain Reload disabled (Enter Play Mode Options)
 - ✅ Shutdown safety via Application.quitting
 - ✅ CRTP-style constraint + runtime guard to catch misuse
@@ -41,14 +46,15 @@ With Domain Reload disabled, `static` state can persist between play sessions, m
 - ✅ Rejects derived types; blocks auto-create when an inactive instance exists (DEV/EDITOR)
 - ✅ Public API requires main thread in Play Mode
 
-> For design details and constraints (Awake/OnDestroy handling, duplicate detection, creation policy, etc.), see the language-specific READMEs.
+> For design details and constraints, see the language-specific READMEs.
 
 ## Quick Start / 使い方
 
+### Persistent Singleton（永続シングルトン）
 ```csharp
-using Foundation.Singletons; // Adjust namespace to your project
+using Singletons;
 
-public sealed class AudioManager : SingletonBehaviour<AudioManager>
+public sealed class GameManager : PersistentSingletonBehaviour<GameManager>
 {
     protected override void OnSingletonAwake()
     {
@@ -62,16 +68,32 @@ public sealed class AudioManager : SingletonBehaviour<AudioManager>
 }
 
 // Access / 利用例:
-// AudioManager.Instance.DoSomething();
-````
+// GameManager.Instance.DoSomething();
+```
+
+### Scene-scoped Singleton（シーンスコープシングルトン）
+```csharp
+using Singletons;
+
+public sealed class LevelController : SceneSingletonBehaviour<LevelController>
+{
+    protected override void OnSingletonAwake()
+    {
+        // Per-scene initialization / シーンごとの初期化
+    }
+}
+
+// ⚠️ Must be placed in scene / シーンに配置必須
+// LevelController.Instance.DoSomething();
+```
 
 * 生成を伴わずに参照したい場合は `TryGetInstance(out var x)` を使用してください。
 
   Use `TryGetInstance(out var x)` when you want to reference the instance without creating it.
 
-* “Domain Reload 無効時の注意点” と “推奨の初期化/破棄フロー” は言語別 README に集約しています。
+* "Domain Reload 無効時の注意点" と "推奨の初期化/破棄フロー" は言語別 README に集約しています。
 
-  Notes for “Domain Reload disabled” and recommended init/teardown flow are documented in the language-specific READMEs.
+  Notes for "Domain Reload disabled" and recommended init/teardown flow are documented in the language-specific READMEs.
 
 ## Background / 背景
 
