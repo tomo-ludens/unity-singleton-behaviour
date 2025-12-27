@@ -13,7 +13,6 @@ namespace Foundation.Singletons
 
         /// <summary>
         /// Increments once per Play session. Used to invalidate singleton caches.
-        /// Wraps around from int.MaxValue to int.MinValue (unchecked increment).
         /// </summary>
         public static int PlaySessionId { get; private set; }
 
@@ -26,11 +25,10 @@ namespace Foundation.Singletons
         {
             if (!Application.isPlaying) return;
 
-            // Domain Reload disabled keeps static event subscribers across Play sessions.
+            // Unsubscribe first: Domain Reload disabled keeps subscribers across Play sessions.
             Application.quitting -= OnQuitting;
             Application.quitting += OnQuitting;
 
-            // If SubsystemRegistration hasn't run for some reason, capture lazily (safe default path).
             if (_mainThreadId == -1)
             {
                 TryLazyCaptureMainThreadId(callerContext: "EnsureInitializedForCurrentPlaySession");
@@ -45,7 +43,6 @@ namespace Foundation.Singletons
         {
             if (!Application.isPlaying) return true;
 
-            // Fail-safe: try to initialize hooks and capture main thread id if it's still uninitialized.
             if (_mainThreadId == -1)
             {
                 EnsureInitializedForCurrentPlaySession();
@@ -55,7 +52,7 @@ namespace Foundation.Singletons
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
                     Debug.LogError(
                         message: $"[SingletonRuntime] {callerContext} must be called from the main thread, " +
-                                 "but the main thread ID is not initialized yet (and could not be captured safely). " +
+                                 "but the main thread ID is not initialized yet. " +
                                  $"Current thread: {Thread.CurrentThread.ManagedThreadId}."
                     );
 #endif
@@ -80,12 +77,12 @@ namespace Foundation.Singletons
             if (!Application.isPlaying) return;
 
             _mainThreadId = Thread.CurrentThread.ManagedThreadId;
-
             BeginNewPlaySession();
         }
 
         private static void BeginNewPlaySession()
         {
+            // Dedupe: SubsystemRegistration can be called multiple times in same frame.
             if (Time.frameCount == _lastBeginFrame) return;
 
             _lastBeginFrame = Time.frameCount;
@@ -112,8 +109,7 @@ namespace Foundation.Singletons
             if (_mainThreadId != -1) return true;
             if (!Application.isPlaying) return false;
 
-            // Unity installs a SynchronizationContext on the main thread.
-            // We only capture lazily when it's present to avoid promoting a background thread.
+            // SynchronizationContext exists only on Unity's main thread.
             if (SynchronizationContext.Current == null) return false;
 
             _mainThreadId = Thread.CurrentThread.ManagedThreadId;
@@ -125,11 +121,9 @@ namespace Foundation.Singletons
             );
 #endif
             return true;
-
         }
 
 #if UNITY_EDITOR
-
         private static bool _editorHooksInstalled;
 
         private static void EnsureEditorHooks()

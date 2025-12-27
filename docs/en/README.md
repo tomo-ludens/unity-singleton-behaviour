@@ -19,6 +19,9 @@ Intended for use with Unity 6.3 (6000.3 series) or later.
 - 🧱 **Practical tolerance for misplacement** (reparents to root and persists even if placed as a child object)
 - 🧼 **Soft reset oriented** (runs `OnSingletonAwake()` each Play session, enabling re-initialization even for the same surviving instance)
 - 🖥️ **Edit Mode safe** (search only in Edit Mode, no side effects on static cache)
+- 🎯 **Exact-type enforcement** (rejects derived types; enforces T is the concrete type)
+- 🚦 **Auto-create blocked if inactive exists (DEV/EDITOR)** to prevent hidden duplicates
+- 🧵 **Main-thread guard** (public API asserts main thread in Play Mode)
 
 ## Requirements ✅
 
@@ -79,7 +82,7 @@ This separation of responsibilities is maintained.
 * A non-generic `SingletonRuntime.SubsystemRegistration` (`RuntimeInitializeLoadType.SubsystemRegistration`) runs before the first scene load and increments `PlaySessionId`
 * `Time.frameCount` guards against double-increment when the callback fires more than once in the same frame
 * `SingletonBehaviour<T>` reads `PlaySessionId` to invalidate its static cache per Play session
-* If initialization is delayed, `EnsureInitializedForCurrentPlaySession` re-hooks `Application.quitting` and lazily captures the main thread ID as a fallback
+* If initialization is delayed, `EnsureInitializedForCurrentPlaySession` re-hooks `Application.quitting` and lazily captures the main thread ID (only when `SynchronizationContext` is present) as a fallback
 
 ### DontDestroyOnLoad Call Management
 
@@ -103,7 +106,7 @@ this implementation uses the `_isPersistent` flag to limit the call to once, avo
 
 ### `static T Instance { get; }`
 
-For mandatory dependencies. Returns the singleton instance. If missing, **searches → auto-creates if not found**. Returns `null` while quitting.
+For mandatory dependencies. Returns the singleton instance. If missing, **searches → auto-creates if not found**. Returns `null` while quitting or from non-main threads. In DEV/EDITOR, auto-create is blocked if an inactive instance exists (throws) and only the exact type `T` is accepted (derived types are rejected).
 ```csharp
 GameManager.Instance.AddScore(10);
 ```
@@ -114,10 +117,12 @@ GameManager.Instance.AddScore(10);
 | Missing         | Search → create if not found      |
 | Quitting        | `null`                            |
 | Edit Mode       | Search only (no create, no cache) |
+| Inactive exists (DEV/EDITOR) | Throws to avoid hidden duplicate |
+| Derived type found | Rejected (exact type only) |
 
 ### `static bool TryGetInstance(out T instance)`
 
-For optional dependencies. Returns the instance if it exists. **Never creates one**. Returns `false` while quitting.
+For optional dependencies. Returns the instance if it exists. **Never creates one**. Returns `false` while quitting or from non-main threads. Only the exact type `T` is accepted; derived types are rejected.
 ```csharp
 if (AudioManager.TryGetInstance(out var am))
 {
@@ -131,6 +136,7 @@ if (AudioManager.TryGetInstance(out var am))
 | Missing         | `false`       | `null`                 |
 | Quitting        | `false`       | `null`                 |
 | Edit Mode       | Search result | Search only (no cache) |
+| Derived type found | `false`    | `null` (rejected)      |
 
 **Typical use case: prevent "accidental creation" during teardown 🧹**
 ```csharp
@@ -183,6 +189,8 @@ public sealed class GameManager : SingletonBehaviour<GameManager>
 
 * ✅ **TryGetInstance**: use only if present / do nothing if missing / avoid creation during shutdown or teardown
   Example: cleanup paths such as `OnDisable` / `OnDestroy` / `OnApplicationPause`, unregistering optional features
+
+> In DEV/EDITOR, `Instance` will throw if an inactive instance exists to prevent hidden duplicates. Prefer `TryGetInstance` in teardown paths to avoid accidental creation.
 
 ---
 

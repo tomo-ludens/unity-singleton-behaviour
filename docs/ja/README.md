@@ -19,6 +19,9 @@ Unity 6.3（6000.3 系）以降での利用を想定しています。
 - 🧱 **誤配置への実用的な耐性**（子オブジェクト配置でも root に移動して永続化）
 - 🧼 **ソフトリセット指向**（Play ごとに `OnSingletonAwake()` を走らせ、同一個体でも再初期化できる設計）
 - 🖥️ **Edit Mode 安全**（Edit Mode では検索のみ、static キャッシュに副作用なし）
+- 🎯 **厳密な型チェック**（派生型を拒否し、T が実体型であることを強制）
+- 🚦 **非アクティブが存在する場合の自動生成ブロック（DEV/EDITOR）**—隠れ重複を防止
+- 🧵 **メインスレッドガード**（Play 中の公開 API はメインスレッドを強制）
 
 ## Requirements ✅
 
@@ -79,7 +82,7 @@ Domain Reload を無効化すると、**static フィールドや static イベ�
 * 非ジェネリックな `SingletonRuntime.SubsystemRegistration`（`RuntimeInitializeLoadType.SubsystemRegistration`）が Play 開始前に必ず呼ばれる前提で、ここで `PlaySessionId` をインクリメント
 * 同一フレーム内で二重に呼ばれた場合も `Time.frameCount` でガードして一度だけカウント
 * `SingletonBehaviour<T>` 側は `PlaySessionId` を参照し、Play ごとに static キャッシュを無効化
-* 初期化順が遅延した場合でも、`EnsureInitializedForCurrentPlaySession` がフォールバックしてフックを張り直し、メインスレッド ID を捕捉
+* 初期化順が遅延した場合でも、`EnsureInitializedForCurrentPlaySession` がフォールバックしてフックを張り直し、`SynchronizationContext` が存在するときのみメインスレッド ID を遅延捕捉
 
 ### DontDestroyOnLoad の呼び出し管理
 
@@ -103,7 +106,7 @@ Domain Reload を無効化すると、**static フィールドや static イベ�
 
 ### `static T Instance { get; }`
 
-必須依存向け。シングルトンインスタンスを返します。未存在の場合は **検索 → 無ければ自動生成**します。終了中（quitting）は `null` を返します。
+必須依存向け。シングルトンインスタンスを返します。未存在の場合は **検索 → 無ければ自動生成**します。終了中（quitting）やバックグラウンドスレッドでは `null` を返します。DEV/EDITOR では非アクティブが存在する場合に自動生成をブロック（例外）し、実体型が T と厳密一致しない候補は拒否します。
 ```csharp
 GameManager.Instance.AddScore(10);
 ```
@@ -114,10 +117,12 @@ GameManager.Instance.AddScore(10);
 | 未存在        | 検索 → 無ければ生成して返却 |
 | quitting 中 | `null`          |
 | Edit Mode  | 検索のみ（生成・キャッシュなし） |
+| 非アクティブが存在（DEV/EDITOR） | 例外（重複を防止） |
+| 派生型が見つかった | `null`（破棄／拒否） |
 
 ### `static bool TryGetInstance(out T instance)`
 
-任意依存向け。インスタンスが存在すれば取得します。**生成は行いません**。終了中（quitting）も `false` を返します。
+任意依存向け。インスタンスが存在すれば取得します。**生成は行いません**。終了中（quitting）やバックグラウンドスレッドでは `false` を返します。実体型が T と厳密一致しない候補は拒否します。
 ```csharp
 if (AudioManager.TryGetInstance(out var am))
 {
@@ -131,6 +136,7 @@ if (AudioManager.TryGetInstance(out var am))
 | 未存在        | `false` | `null`     |
 | quitting 中 | `false` | `null`     |
 | Edit Mode  | 検索結果    | 検索のみ（キャッシュなし） |
+| 派生型が見つかった | `false` | `null`（拒否）  |
 
 **典型ユースケース：終了処理での「うっかり生成」を防止 🧹**
 ```csharp
@@ -183,6 +189,8 @@ public sealed class GameManager : SingletonBehaviour<GameManager>
 
 * ✅ **TryGetInstance**：「あるなら使う」「無いなら何もしない」「終了処理で増やしたくない」
   例：`OnDisable` / `OnDestroy` / `OnApplicationPause` などの後片付け、任意機能の登録解除
+
+> DEV/EDITOR では非アクティブが存在する場合に `Instance` が例外でブロックされます。終了処理や任意依存には `TryGetInstance` を使うと安全です。
 
 ---
 

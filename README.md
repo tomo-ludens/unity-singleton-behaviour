@@ -27,6 +27,8 @@ With Domain Reload disabled, `static` state can persist between play sessions, m
 - ✅ Application.quitting を考慮した終了時の安全性
 - ✅ CRTP 風制約 + ランタイムガードで誤用を検出
 - ✅ Edit Mode では検索のみ（static キャッシュに副作用なし）
+- ✅ 派生型を拒否する厳密型チェック／非アクティブが存在する場合の自動生成ブロック（DEV/EDITOR）
+- ✅ 公開 API は Play 中メインスレッドを強制
 
 ---
 - ✅ Type-per-singleton (SingletonBehaviour<T>)
@@ -36,6 +38,8 @@ With Domain Reload disabled, `static` state can persist between play sessions, m
 - ✅ Shutdown safety via Application.quitting
 - ✅ CRTP-style constraint + runtime guard to catch misuse
 - ✅ Edit Mode safe (search only, no side effects on static cache)
+- ✅ Rejects derived types; blocks auto-create when an inactive instance exists (DEV/EDITOR)
+- ✅ Public API requires main thread in Play Mode
 
 > For design details and constraints (Awake/OnDestroy handling, duplicate detection, creation policy, etc.), see the language-specific READMEs.
 

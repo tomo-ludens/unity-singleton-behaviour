@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 namespace Foundation.Singletons
@@ -6,7 +7,11 @@ namespace Foundation.Singletons
     /// Type-per-singleton base class for MonoBehaviour with soft reset per Play session.
     /// </summary>
     /// <remarks>
-    /// All public API (Instance, TryGetInstance) must be called from the main thread.
+    /// <list type="bullet">
+    ///   <item>All public API must be called from the main thread.</item>
+    ///   <item>In DEV/EDITOR, inactive instances block auto-creation (fail-fast).</item>
+    ///   <item>FindAnyObjectByType may return derived types; AsExactType enforces T == actual type.</item>
+    /// </list>
     /// </remarks>
     public abstract class SingletonBehaviour<T> : MonoBehaviour where T : SingletonBehaviour<T>
     {
@@ -24,16 +29,21 @@ namespace Foundation.Singletons
 
         /// <summary>
         /// Returns the singleton instance. Auto-creates if missing (Play Mode only).
-        /// Returns null while quitting or if called from a background thread.
         /// </summary>
-        /// <remarks>Must be called from main thread.</remarks>
+        /// <returns>The instance, or null while quitting / off main thread (Edit Mode: null if missing).</returns>
+        /// <exception cref="InvalidOperationException">
+        /// (DEV/EDITOR) Thrown when an inactive/disabled instance exists (auto-creation is blocked).
+        /// </exception>
         public static T Instance
         {
             get
             {
                 if (!Application.isPlaying)
                 {
-                    return Object.FindAnyObjectByType<T>(findObjectsInactive: FindInactivePolicy);
+                    return AsExactType(
+                        candidate: FindAnyObjectByType<T>(findObjectsInactive: FindInactivePolicy),
+                        callerContext: $"{typeof(T).Name}.Instance[EditMode]"
+                    );
                 }
 
                 if (!SingletonRuntime.AssertMainThread(callerContext: $"{typeof(T).Name}.Instance"))
@@ -46,20 +56,12 @@ namespace Foundation.Singletons
                 if (SingletonRuntime.IsQuitting) return null;
                 if (_instance != null) return _instance;
 
-                _instance = Object.FindAnyObjectByType<T>(findObjectsInactive: FindInactivePolicy);
+                var candidate = FindAnyObjectByType<T>(findObjectsInactive: FindInactivePolicy);
+                _instance = AsExactType(candidate: candidate, callerContext: $"{typeof(T).Name}.Instance[PlayMode]");
                 if (_instance != null) return _instance;
 
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-                var any = Object.FindAnyObjectByType<T>(findObjectsInactive: FindObjectsInactive.Include);
-                if (any != null && !any.isActiveAndEnabled)
-                {
-                    Debug.LogWarning(
-                        message: $"[{typeof(T).Name}] No ACTIVE instance found, but an INACTIVE instance exists ('{any.name}'). " +
-                                 "Policy is Exclude, so a NEW instance will be auto-created (risk: later duplicate destruction).",
-                        context: any
-                    );
-                }
-#endif
+                AssertNoInactiveInstanceExists();
+
                 _instance = CreateInstance();
                 return _instance;
             }
@@ -67,14 +69,14 @@ namespace Foundation.Singletons
 
         /// <summary>
         /// Gets the singleton instance without creating one.
-        /// Returns false while quitting, when no instance exists, or if called from a background thread.
         /// </summary>
-        /// <remarks>Must be called from main thread.</remarks>
+        /// <returns>False if: quitting, no instance, or background thread.</returns>
         public static bool TryGetInstance(out T instance)
         {
             if (!Application.isPlaying)
             {
-                instance = Object.FindAnyObjectByType<T>(findObjectsInactive: FindInactivePolicy);
+                instance = FindAnyObjectByType<T>(findObjectsInactive: FindInactivePolicy);
+                instance = AsExactType(candidate: instance, callerContext: $"{typeof(T).Name}.TryGetInstance[EditMode]");
                 return instance != null;
             }
 
@@ -98,9 +100,17 @@ namespace Foundation.Singletons
                 return true;
             }
 
-            _instance = Object.FindAnyObjectByType<T>(findObjectsInactive: FindInactivePolicy);
-            instance = _instance;
-            return instance != null;
+            var candidate = FindAnyObjectByType<T>(findObjectsInactive: FindInactivePolicy);
+            candidate = AsExactType(candidate: candidate, callerContext: $"{typeof(T).Name}.TryGetInstance[PlayMode]");
+            if (candidate != null)
+            {
+                _instance = candidate;
+                instance = _instance;
+                return true;
+            }
+
+            instance = null;
+            return false;
         }
 
         protected void Awake()
@@ -149,11 +159,59 @@ namespace Foundation.Singletons
 
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             Debug.LogWarning(
-                message: $"[{typeof(T).Name}] Auto-created (no active instance found; inactive objects excluded).",
+                message: $"[{typeof(T).Name}] Auto-created (no instance found).",
                 context: instance
             );
 #endif
             return instance;
+        }
+
+        /// <summary>
+        /// Enforces type-per-singleton: candidate must be exactly T, not a derived type.
+        /// </summary>
+        private static T AsExactType(T candidate, string callerContext)
+        {
+            if (candidate == null) return null;
+
+            if (candidate.GetType() == typeof(T))
+            {
+                return candidate;
+            }
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            Debug.LogError(
+                message: $"[{typeof(T).Name}] Type mismatch found via '{callerContext}'. " +
+                         $"Expected EXACT type '{typeof(T).Name}', but found '{candidate.GetType().Name}'.",
+                context: candidate
+            );
+#endif
+
+            // Play Mode: destroy to enforce invariant.
+            // Edit Mode: log only to avoid Undo/Inspector side effects.
+            if (Application.isPlaying)
+            {
+                Destroy(obj: candidate.gameObject);
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// DEV/EDITOR only: throws if an inactive instance exists to prevent silent auto-create conflicts.
+        /// </summary>
+        private static void AssertNoInactiveInstanceExists()
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            var candidate = FindAnyObjectByType<T>(findObjectsInactive: FindObjectsInactive.Include);
+
+            if (candidate != null && !candidate.isActiveAndEnabled)
+            {
+                throw new InvalidOperationException(
+                    message: $"[{typeof(T).Name}] Auto-create BLOCKED: an inactive/disabled instance exists ('{candidate.name}', actual type: '{candidate.GetType().Name}'). " +
+                             "Enable/activate the existing instance, or remove it from the scene."
+                );
+            }
+#endif
         }
 
         private static void InvalidateInstanceCacheIfPlaySessionChanged()
@@ -206,6 +264,7 @@ namespace Foundation.Singletons
                 return false;
             }
 
+            // CRTP violation check: GetType() must equal typeof(T).
             if (this.GetType() != typeof(T))
             {
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
@@ -237,15 +296,14 @@ namespace Foundation.Singletons
 
         private void EnsurePersistent()
         {
-            // Already persistent (e.g., auto-created instance).
             if (this._isPersistent) return;
 
-            // DontDestroyOnLoad requires root.
+            // DontDestroyOnLoad requires root GameObject.
             if (this.transform.parent != null)
             {
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
                 Debug.LogWarning(
-                    message: $"[{typeof(T).Name}] Reparented to root for DontDestroyOnLoad (was under '{this.transform.parent.name}').",
+                    message: $"[{typeof(T).Name}] Reparented to root for DontDestroyOnLoad.",
                     context: this
                 );
 #endif
