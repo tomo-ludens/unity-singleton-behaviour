@@ -6,17 +6,11 @@ namespace Singletons
     /// <summary>
     /// Base class for application-lifetime singletons that persist across all scene loads.
     /// </summary>
-    /// <typeparam name="T">The concrete singleton type (CRTP pattern).</typeparam>
+    /// <typeparam name="T">The concrete singleton type (must be sealed).</typeparam>
     /// <remarks>
-    /// <para><b>Behavior:</b></para>
-    /// <list type="bullet">
-    ///   <item>Applies <c>DontDestroyOnLoad</c> automatically; survives scene transitions.</item>
-    ///   <item>Auto-creates instance on first <c>Instance</c> access if none exists.</item>
-    ///   <item>Duplicates are detected and destroyed with a warning.</item>
-    /// </list>
-    /// <para><b>Access Pattern:</b> <c>T.Instance</c> auto-creates if missing; returns null only while quitting or from background thread.</para>
-    /// <para><b>Lifecycle Hooks:</b> Override <c>OnSingletonAwake()</c> / <c>OnSingletonDestroy()</c> instead of Awake/OnDestroy.</para>
-    /// <para><b>vs SceneSingletonBehaviour:</b> Use this for global managers (AudioManager, SaveSystem). Use <see cref="SceneSingletonBehaviour{T}"/> for scene-local managers that reset on scene reload.</para>
+    /// <para><b>Behavior:</b> Auto-creates on first access, applies <c>DontDestroyOnLoad</c>, destroys duplicates.</para>
+    /// <para><b>Lifecycle:</b> Use <c>OnSingletonAwake()</c>/<c>OnSingletonDestroy()</c>; base Awake/OnDestroy calls required if overriding.</para>
+    /// <para><b>vs Scene:</b> Use <see cref="SceneSingletonBehaviour{T}"/> for scene-local managers that reset on reload.</para>
     /// </remarks>
     /// <example>
     /// <code>
@@ -26,7 +20,7 @@ namespace Singletons
     /// }
     /// </code>
     /// </example>
-    public abstract class PersistentSingletonBehaviour<T> : SingletonBehaviour<T, PersistentPolicy> where T : PersistentSingletonBehaviour<T>
+    public abstract class PersistentSingletonBehaviour<T>: SingletonBehaviour<T, PersistentPolicy> where T : PersistentSingletonBehaviour<T>
     {
     }
 }

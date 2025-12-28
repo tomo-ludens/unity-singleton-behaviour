@@ -7,11 +7,8 @@ namespace Singletons.Core
     /// Manages Play session state for singleton infrastructure.
     /// </summary>
     /// <remarks>
-    /// <para><b>PlaySessionId:</b> Increments each Play Mode enter. Used by SingletonBehaviour
-    /// to invalidate stale static references that survive Domain Reload skip in Editor.</para>
-    /// <para><b>IsQuitting:</b> Set true on BOTH <c>Application.quitting</c> AND
-    /// <c>EditorApplication.playModeStateChanged(ExitingPlayMode)</c>.
-    /// Singleton access returns null during quit to prevent resurrection.</para>
+    /// <para><b>PlaySessionId:</b> Increments each Play Mode enter. Invalidates stale static references surviving Domain Reload skip.</para>
+    /// <para><b>IsQuitting:</b> True during quit (runtime + Editor exit). Singleton access returns null to prevent resurrection.</para>
     /// </remarks>
     internal static class SingletonRuntime
     {
@@ -21,13 +18,18 @@ namespace Singletons.Core
         private static int _lastBeginFrame = InvalidFrameCount;
         private static int _mainThreadId = UninitializedMainThreadId;
 
+        /// <summary>
+        /// Current Play session ID. Increments each Play Mode enter.
+        /// </summary>
         public static int PlaySessionId { get; private set; }
+
+        /// <summary>
+        /// True when application is quitting. Singleton access returns null during quit.
+        /// </summary>
         public static bool IsQuitting { get; private set; }
 
         private static string LogCategoryName => nameof(SingletonRuntime);
-        private static bool IsMainThread =>
-            _mainThreadId != UninitializedMainThreadId &&
-            _mainThreadId == Thread.CurrentThread.ManagedThreadId;
+        private static bool IsMainThread => _mainThreadId != UninitializedMainThreadId && _mainThreadId == Thread.CurrentThread.ManagedThreadId;
 
         internal static void EnsureInitializedForCurrentPlaySession()
         {
