@@ -4,8 +4,7 @@ namespace Singletons.Policy
     /// Contract for singleton lifecycle policies. Used as a generic constraint in <c>SingletonBehaviour&lt;T, TPolicy&gt;</c>.
     /// </summary>
     /// <remarks>
-    /// <para>Implementations MUST be <c>readonly struct</c> with compile-time constant property values.</para>
-    /// <para>This enables zero-allocation policy resolution via <c>default(TPolicy)</c> in generic singleton base.</para>
+    /// Implementations MUST be <c>readonly struct</c> with constant property values (enables zero-allocation <c>default(TPolicy)</c>).
     /// </remarks>
     /// <seealso cref="PersistentPolicy"/>
     /// <seealso cref="SceneScopedPolicy"/>

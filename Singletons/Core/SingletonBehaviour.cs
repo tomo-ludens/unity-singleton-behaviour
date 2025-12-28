@@ -7,30 +7,13 @@ namespace Singletons.Core
     /// Policy-driven singleton base class for <see cref="MonoBehaviour"/>.
     /// </summary>
     /// <remarks>
-    /// <para><b>Exact type only:</b>
-    /// Concrete singletons MUST be <c>sealed</c>. Do NOT derive from a concrete singleton.
-    /// <c>class Derived : MySingleton</c> is invalid and is rejected by the runtime exact-type check.</para>
-    /// <para><b>Static isolation:</b>
-    /// <c>_instance</c> and <c>_cachedPlaySessionId</c> are isolated per generic instantiation (<c>T</c>, <c>TPolicy</c>).
-    /// Changing <c>T</c> or the policy yields an independent singleton storage.</para>
-    /// <para><b>Release behavior:</b>
-    /// DEV/EDITOR validations use <c>[Conditional]</c>. In release builds, validation call sites are stripped from IL.
-    /// On validation failures this API returns <c>null</c>/<c>false</c> instead of throwing. Callers MUST handle that.</para>
-    /// <para><b>Lifecycle overrides:</b>
-    /// If you override <c>Awake</c>, <c>OnEnable</c>, or <c>OnDestroy</c>, you MUST call the base method.
-    /// Missing a base call is a bug.
-    /// A safety net may establish the singleton on the first <c>Instance</c>/<c>TryGetInstance</c> access, which can
-    /// conceal ordering and duplication issues. Use <c>OnSingletonAwake</c>/<c>OnSingletonDestroy</c> as extension points.</para>
-    /// <para><b>Active + enabled:</b>
-    /// Singleton components MUST remain active and enabled.
-    /// Disabled components are treated as invalid and block safe access.</para>
-    /// <para><b>Main thread only:</b>
-    /// All public API is main-thread only because it calls UnityEngine APIs (Find/Create/Destroy).</para>
+    /// <para><b>Sealed only:</b> Concrete types MUST be <c>sealed</c>; subclassing is rejected at runtime.</para>
+    /// <para><b>Release builds:</b> Validations are stripped via <c>[Conditional]</c>; API returns <c>null</c>/<c>false</c> on failure.</para>
+    /// <para><b>Lifecycle:</b> Override <c>Awake</c>/<c>OnEnable</c>/<c>OnDestroy</c> MUST call base. Use <c>OnSingletonAwake</c>/<c>OnSingletonDestroy</c> for extension.</para>
+    /// <para><b>Constraints:</b> Component must stay active+enabled. Main-thread only.</para>
     /// </remarks>
     [DisallowMultipleComponent]
-    public abstract class SingletonBehaviour<T, TPolicy> : MonoBehaviour
-        where T : SingletonBehaviour<T, TPolicy>
-        where TPolicy : struct, ISingletonPolicy
+    public abstract class SingletonBehaviour<T, TPolicy> : MonoBehaviour where T : SingletonBehaviour<T, TPolicy> where TPolicy : struct, ISingletonPolicy
     {
         private const int UninitializedPlaySessionId = -1;
         private const FindObjectsInactive FindInactivePolicy = FindObjectsInactive.Exclude;
@@ -49,6 +32,7 @@ namespace Singletons.Core
         /// <summary>
         /// Returns singleton instance. In PlayMode, returns null during quit, from background thread, or if validation fails in release.
         /// </summary>
+        /// <returns>The singleton instance, or <c>null</c> if unavailable.</returns>
         public static T Instance
         {
             get
@@ -114,6 +98,7 @@ namespace Singletons.Core
         /// <summary>
         /// Non-creating lookup. Does NOT trigger auto-create even if policy allows.
         /// </summary>
+        /// <returns><c>true</c> if instance exists and is valid; otherwise <c>false</c>.</returns>
         public static bool TryGetInstance(out T instance)
         {
             if (!Application.isPlaying)
@@ -205,16 +190,12 @@ namespace Singletons.Core
         /// <summary>
         /// Called once per Play session after singleton established.
         /// </summary>
-        protected virtual void OnSingletonAwake()
-        {
-        }
+        protected virtual void OnSingletonAwake() { }
 
         /// <summary>
         /// Called when THIS instance is destroyed as the singleton. NOT called for destroyed duplicates.
         /// </summary>
-        protected virtual void OnSingletonDestroy()
-        {
-        }
+        protected virtual void OnSingletonDestroy() { }
 
         private static T CreateInstance()
         {
@@ -227,14 +208,8 @@ namespace Singletons.Core
 
             var instance = go.AddComponent<T>();
             instance._isPersistent = Policy.PersistAcrossScenes;
-
             instance.InitializeForCurrentPlaySessionIfNeeded();
-
-            SingletonLogger.LogWarning(
-                message: "Auto-created.",
-                typeTag: LogCategoryName,
-                context: instance
-            );
+            SingletonLogger.LogWarning(message: "Auto-created.", typeTag: LogCategoryName, context: instance);
 
             return instance;
         }
@@ -242,17 +217,9 @@ namespace Singletons.Core
         private static T AsExactType(T candidate, string callerContext)
         {
             if (candidate == null) return null;
+            if (candidate.GetType() == typeof(T)) return candidate;
 
-            if (candidate.GetType() == typeof(T))
-            {
-                return candidate;
-            }
-
-            SingletonLogger.LogError(
-                message: $"Type mismatch found via '{callerContext}'.\nExpected EXACT type '{typeof(T).Name}', but found '{candidate.GetType().Name}'.",
-                typeTag: LogCategoryName,
-                context: candidate
-            );
+            SingletonLogger.LogError(message: $"Type mismatch found via '{callerContext}'.\nExpected EXACT type '{typeof(T).Name}', but found '{candidate.GetType().Name}'.", typeTag: LogCategoryName, context: candidate);
 
             if (Application.isPlaying)
             {
@@ -271,10 +238,7 @@ namespace Singletons.Core
             {
                 if (!instance.isActiveAndEnabled)
                 {
-                    SingletonLogger.ThrowInvalidOperation(
-                        message: $"Auto-create BLOCKED: inactive instance exists ('{instance.name}', type: '{instance.GetType().Name}').\nEnable it or remove from scene.",
-                        typeTag: LogCategoryName
-                    );
+                    SingletonLogger.ThrowInvalidOperation(message: $"Auto-create BLOCKED: inactive instance exists ('{instance.name}', type: '{instance.GetType().Name}').\nEnable it or remove from scene.", typeTag: LogCategoryName);
                 }
             }
         }
@@ -308,7 +272,6 @@ namespace Singletons.Core
             if (this._initializedPlaySessionId == currentPlaySessionId) return;
 
             this.EnsurePersistent();
-
             this._initializedPlaySessionId = currentPlaySessionId;
             this.OnSingletonAwake();
         }
@@ -319,24 +282,14 @@ namespace Singletons.Core
             {
                 if (ReferenceEquals(objA: _instance, objB: this)) return true;
 
-                SingletonLogger.LogWarning(
-                    message: $"Duplicate detected. Existing='{_instance.name}', destroying '{this.name}'.",
-                    typeTag: LogCategoryName,
-                    context: this
-                );
-
+                SingletonLogger.LogWarning(message: $"Duplicate detected. Existing='{_instance.name}', destroying '{this.name}'.", typeTag: LogCategoryName, context: this);
                 Destroy(obj: this.gameObject);
                 return false;
             }
 
             if (this.GetType() != typeof(T))
             {
-                SingletonLogger.LogError(
-                    message: $"Type mismatch. Expected='{typeof(T).Name}', Actual='{this.GetType().Name}', destroying '{this.name}'.",
-                    typeTag: LogCategoryName,
-                    context: this
-                );
-
+                SingletonLogger.LogError(message: $"Type mismatch. Expected='{typeof(T).Name}', Actual='{this.GetType().Name}', destroying '{this.name}'.", typeTag: LogCategoryName, context: this);
                 Destroy(obj: this.gameObject);
                 return false;
             }
@@ -352,12 +305,7 @@ namespace Singletons.Core
 
             if (this.transform.parent != null)
             {
-                SingletonLogger.LogWarning(
-                    message: "Reparented to root for DontDestroyOnLoad.",
-                    typeTag: LogCategoryName,
-                    context: this
-                );
-
+                SingletonLogger.LogWarning(message: "Reparented to root for DontDestroyOnLoad.", typeTag: LogCategoryName, context: this);
                 this.transform.SetParent(parent: null, worldPositionStays: true);
             }
 
