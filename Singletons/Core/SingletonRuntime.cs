@@ -15,11 +15,18 @@ namespace Singletons.Core
     /// </remarks>
     internal static class SingletonRuntime
     {
-        private static int _lastBeginFrame = -1;
-        private static int _mainThreadId = -1;
+        private const int InvalidFrameCount = -1;
+        private const int UninitializedMainThreadId = -1;
+
+        private static int _lastBeginFrame = InvalidFrameCount;
+        private static int _mainThreadId = UninitializedMainThreadId;
 
         public static int PlaySessionId { get; private set; }
         public static bool IsQuitting { get; private set; }
+
+        private static bool IsMainThread =>
+            _mainThreadId != UninitializedMainThreadId &&
+            _mainThreadId == Thread.CurrentThread.ManagedThreadId;
 
         internal static void EnsureInitializedForCurrentPlaySession()
         {
@@ -28,7 +35,7 @@ namespace Singletons.Core
             Application.quitting -= OnQuitting;
             Application.quitting += OnQuitting;
 
-            if (_mainThreadId == -1)
+            if (_mainThreadId == UninitializedMainThreadId)
             {
                 TryLazyCaptureMainThreadId(callerContext: "EnsureInitializedForCurrentPlaySession");
             }
@@ -38,15 +45,15 @@ namespace Singletons.Core
 #endif
         }
 
-        internal static bool AssertMainThread(string callerContext)
+        internal static bool ValidateMainThread(string callerContext)
         {
             if (!Application.isPlaying) return true;
 
-            if (_mainThreadId == -1)
+            if (_mainThreadId == UninitializedMainThreadId)
             {
                 EnsureInitializedForCurrentPlaySession();
 
-                if (_mainThreadId == -1 && !TryLazyCaptureMainThreadId(callerContext: callerContext))
+                if (_mainThreadId == UninitializedMainThreadId && !TryLazyCaptureMainThreadId(callerContext: callerContext))
                 {
                     SingletonLogger.LogError(
                         message: $"[SingletonRuntime] {callerContext} must be called from the main thread, but the main thread ID is not initialized yet.\n" +
@@ -56,7 +63,7 @@ namespace Singletons.Core
                 }
             }
 
-            if (_mainThreadId != -1 && _mainThreadId == Thread.CurrentThread.ManagedThreadId)
+            if (IsMainThread)
             {
                 return true;
             }
@@ -101,7 +108,7 @@ namespace Singletons.Core
 
         private static bool TryLazyCaptureMainThreadId(string callerContext)
         {
-            if (_mainThreadId != -1) return true;
+            if (_mainThreadId != UninitializedMainThreadId) return true;
             if (!Application.isPlaying) return false;
 
             if (SynchronizationContext.Current == null) return false;

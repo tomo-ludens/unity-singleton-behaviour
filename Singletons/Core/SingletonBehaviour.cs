@@ -7,19 +7,23 @@ namespace Singletons.Core
     /// Policy-driven singleton MonoBehaviour.
     /// </summary>
     /// <remarks>
-    /// <para><b>CRITICAL - EXACT TYPE MATCH:</b> Do NOT subclass derived singletons.
+    /// <para><b>CRITICAL - EXACT TYPE MATCH:</b>
+    /// Do NOT subclass derived singletons.
     /// <c>class Derived : MySingleton</c> accessing <c>MySingleton.Instance</c> will fail type check.
-    /// Each concrete singleton must directly inherit SingletonBehaviour.</para>
-    /// <para><b>STATIC FIELD ISOLATION:</b> <c>_instance</c> and <c>_cachedPlaySessionId</c> are
-    /// per generic type instantiation (T, TPolicy pair). Different T creates independent singletons.</para>
-    /// <para><b>RELEASE BUILD BEHAVIOR:</b> <see cref="SingletonLogger.ThrowInvalidOperation"/> calls
-    /// are stripped in release builds. Code continues past validation failures returning null.
-    /// DEV/EDITOR builds throw exceptions for fail-fast debugging.</para>
-    /// <list type="bullet">
-    ///   <item>Main thread only for all public API.</item>
-    ///   <item>Override Awake/OnEnable/OnDestroy requires base call.</item>
-    ///   <item>Prefer OnSingletonAwake/OnSingletonDestroy hooks.</item>
-    /// </list>
+    /// Each concrete singleton must directly inherit <c>SingletonBehaviour&lt;T, TPolicy&gt;</c>.</para>
+    /// <para><b>STATIC FIELD ISOLATION:</b>
+    /// <c>_instance</c> and <c>_cachedPlaySessionId</c> are per generic instantiation (T, TPolicy).
+    /// Different T (or different policy) yields independent singleton storage.</para>
+    /// <para><b>RELEASE BUILD BEHAVIOR:</b>
+    /// DEV/EDITOR-only validations use <c>[Conditional]</c>. In release builds,
+    /// <see cref="SingletonLogger.ThrowInvalidOperation"/> calls are stripped and the API returns <c>null</c>
+    /// (or <c>false</c>) on validation failures instead of throwing.</para>
+    /// <para><b>LIFECYCLE OVERRIDES:</b>
+    /// If you override <c>Awake</c>/<c>OnEnable</c>/<c>OnDestroy</c>, you must call base.
+    /// If you forget, singleton establishment and <c>OnSingletonAwake()</c> may be deferred until the first
+    /// <c>Instance</c>/<c>TryGetInstance</c> access (safety net), which can hide ordering/duplication issues.
+    /// Prefer <c>OnSingletonAwake</c>/<c>OnSingletonDestroy</c> hooks.</para>
+    /// <para><b>(Optional)</b> Do not keep singleton components disabled; keep them active and enabled.</para>
     /// </remarks>
     public abstract class SingletonBehaviour<T, TPolicy> : MonoBehaviour
         where T : SingletonBehaviour<T, TPolicy>
@@ -55,7 +59,7 @@ namespace Singletons.Core
                     );
                 }
 
-                if (!SingletonRuntime.AssertMainThread(callerContext: $"{typeof(T).Name}.Instance"))
+                if (!SingletonRuntime.ValidateMainThread(callerContext: $"{typeof(T).Name}.Instance"))
                 {
                     return null;
                 }
@@ -95,7 +99,7 @@ namespace Singletons.Core
                     return null;
                 }
 
-                AssertNoInactiveInstanceExists();
+                ThrowIfInactiveInstanceExists();
 
                 _instance = CreateInstance();
                 return _instance;
@@ -114,7 +118,7 @@ namespace Singletons.Core
                 return instance != null;
             }
 
-            if (!SingletonRuntime.AssertMainThread(callerContext: $"{typeof(T).Name}.TryGetInstance"))
+            if (!SingletonRuntime.ValidateMainThread(callerContext: $"{typeof(T).Name}.TryGetInstance"))
             {
                 instance = null;
                 return false;
@@ -257,7 +261,7 @@ namespace Singletons.Core
 
         // In release: entire method call stripped, FindObjectsByType not executed.
         [System.Diagnostics.Conditional(conditionString: "UNITY_EDITOR"), System.Diagnostics.Conditional(conditionString: "DEVELOPMENT_BUILD")]
-        private static void AssertNoInactiveInstanceExists()
+        private static void ThrowIfInactiveInstanceExists()
         {
             var allInstances = FindObjectsByType<T>(findObjectsInactive: FindObjectsInactive.Include, sortMode: FindObjectsSortMode.None);
 
@@ -334,19 +338,7 @@ namespace Singletons.Core
                 return false;
             }
 
-            var typedThis = this as T;
-            if (typedThis == null)
-            {
-                SingletonLogger.LogError(
-                    message: $"[{typeof(T).Name}] Cast failure. Destroying '{this.name}'.",
-                    context: this
-                );
-
-                Destroy(obj: this.gameObject);
-                return false;
-            }
-
-            _instance = typedThis;
+            _instance = (T)this;
             return true;
         }
 

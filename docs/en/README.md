@@ -25,7 +25,7 @@ Common features:
 - 🧼 **Soft reset oriented** (runs `OnSingletonAwake()` each Play session, enabling re-initialization even for the same surviving instance)
 - 🖥️ **Edit Mode safe** (search only in Edit Mode, no side effects on static cache)
 - 🎯 **Exact-type enforcement** (rejects derived types; enforces T is the concrete type)
-- 🚦 **Auto-create blocked if inactive exists (DEV/EDITOR)** to prevent hidden duplicates
+- 🚦 **Fail-fast on disabled/inactive detection (DEV/EDITOR)**—early discovery of hidden duplicates and misconfigurations
 - 🧵 **Main-thread guard** (public API asserts main thread in Play Mode)
 
 ## Requirements ✅
@@ -39,22 +39,6 @@ Common features:
 - Add the `Singletons/` folder to your project (e.g., `Assets/Plugins/Singletons/`).
 - Adjust the namespace according to your project conventions.
 
-### Directory Structure
-
-```
-Singletons/
-├── PersistentSingletonBehaviour.cs   # Public API (persistent)
-├── SceneSingletonBehaviour.cs        # Public API (scene-scoped)
-├── Core/
-│   ├── SingletonBehaviour.cs         # Core implementation
-│   ├── SingletonRuntime.cs           # Internal runtime
-│   └── SingletonLogger.cs            # Conditional logger
-└── Policy/
-    ├── ISingletonPolicy.cs           # Policy interface
-    ├── PersistentPolicy.cs           # Persistent policy
-    └── SceneScopedPolicy.cs          # Scene-scoped policy
-```
-
 ### Namespace Import
 ```csharp
 using Singletons;
@@ -65,7 +49,6 @@ using Singletons;
 ### 1) Persistent Singleton (PersistentSingletonBehaviour)
 
 Survives scene loads and auto-creates if missing.
-
 ```csharp
 using Singletons;
 
@@ -75,7 +58,7 @@ public sealed class GameManager : PersistentSingletonBehaviour<GameManager>
 
     protected override void OnSingletonAwake()
     {
-        // Initialization that runs every Play session
+        // Initialization that runs every Play session (idempotent recommended)
         this.Score = 0;
     }
 
@@ -91,7 +74,6 @@ public sealed class GameManager : PersistentSingletonBehaviour<GameManager>
 ### 2) Scene-scoped Singleton (SceneSingletonBehaviour)
 
 Must be placed in scene. Destroyed on scene unload, no auto-creation.
-
 ```csharp
 using Singletons;
 
@@ -105,6 +87,7 @@ public sealed class LevelController : SceneSingletonBehaviour<LevelController>
 ```
 
 > ⚠️ **Accessing `Instance` without a placed instance throws in DEV/EDITOR**, returns `null` in Player.
+> ⚠️ **Disabled/inactive instances also throw in DEV/EDITOR**, return `null` in Player.
 
 ### 3) Choosing between `Instance` and `TryGetInstance`
 
@@ -119,7 +102,6 @@ public sealed class LevelController : SceneSingletonBehaviour<LevelController>
 
 * ✅ **TryGetInstance**: use only if present / do nothing if missing / avoid creation during shutdown or teardown
   Example: cleanup paths such as `OnDisable` / `OnDestroy` / `OnApplicationPause`, unregistering optional features
-
 ```csharp
 // Safe teardown pattern
 private void OnDisable()
@@ -169,9 +151,8 @@ Returns the singleton instance.
 | Missing | Search → **auto-create** if not found | Search → **throw (DEV/EDITOR)** or `null` (Player) |
 | Quitting | `null` | `null` |
 | Edit Mode | Search only (no create, no cache) | Search only (no create, no cache) |
-| Inactive exists (DEV/EDITOR) | Throws to avoid hidden duplicate | Throws to avoid hidden duplicate |
-| Derived type found | `null` (Play: destroy, Edit: log only) | `null` (Play: destroy, Edit: log only) |
-| Inactive/disabled instance found | Throw (DEV/EDITOR) or `null` (Player) | Throw (DEV/EDITOR) or `null` (Player) |
+| Disabled/inactive found | Throw (DEV/EDITOR) or `null` (Player) | Throw (DEV/EDITOR) or `null` (Player) |
+| Derived type found | `null` (destroy/reject) | `null` (destroy/reject) |
 
 ### `static bool TryGetInstance(out T instance)`
 
@@ -183,14 +164,14 @@ Gets the singleton instance without creating one.
 | Missing | `false` | `null` |
 | Quitting | `false` | `null` |
 | Edit Mode | Search result | Search only (no cache) |
-| Derived type found | `false` | `null` (Play: destroy, Edit: log only) |
+| Disabled/inactive found | `false` (throws in DEV/EDITOR) | `null` |
+| Derived type found | `false` | `null` (reject) |
 
 ## Design Intent 🧠
 
 ### Why the policy pattern?
 
 By separating singleton behavior (persistence, auto-creation) into policies, we share the same core logic while providing purpose-specific classes.
-
 ```csharp
 public interface ISingletonPolicy
 {
@@ -217,23 +198,8 @@ This separation of responsibilities is maintained.
 
 ### DontDestroyOnLoad Call Management
 
-While calling `DontDestroyOnLoad` multiple times on the same object is harmless,
-this implementation uses the `_isPersistent` flag to limit the call to once, avoiding unnecessary processing.
-
-### Why `SingletonLogger`?
-
-The `[Conditional]` attribute **removes call sites at compile time** in release builds.
-This means:
-
-* DEV/EDITOR: Exceptions and warnings enable fail-fast debugging
-* Release builds: No exceptions, no logs—returns `null` and continues (performance priority)
-
-```csharp
-// In release builds, this call is stripped entirely
-SingletonLogger.ThrowInvalidOperation("...");
-// ↑ Call removed, execution continues to return null below
-return null;
-```
+`DontDestroyOnLoad` is only effective on root GameObjects (or components on root GameObjects).
+This implementation uses the `_isPersistent` flag to limit the call to once, while also reparenting child-placed objects to root for persistence (Persistent only).
 
 ## Constraints ⚠️
 
@@ -250,6 +216,10 @@ The base class Unity message methods are responsible for:
 If you override these in a derived class, **always call `base.Awake()` etc.**
 The recommended approach is to use `OnSingletonAwake()` / `OnSingletonDestroy()`.
 
+> ※ Safety net: `Instance` / `TryGetInstance` will run `Initialize...` even when a candidate is found,
+> as a "just-in-case" initialization. However, this is a **rescue for forgotten base calls** and
+> makes initialization order, duplicate rejection, and persistence timing ambiguous.
+> In practice, always call base.
 ```csharp
 // OK: calling base
 protected override void Awake()
@@ -283,6 +253,8 @@ public sealed class A : PersistentSingletonBehaviour<A> { }
 | Do not place the same singleton in multiple scenes | The later-initialized one will be destroyed (first wins) |
 | Root GameObject is preferable (Persistent) | `DontDestroyOnLoad` only works on root |
 
+(Optional, accident prevention) **Do not keep singleton components disabled; keep them Active and Enabled.**
+
 This implementation automatically reparents a child-placed singleton to root and persists it (Persistent only).
 Since unintended moves can be confusing, a warning is emitted only in **Editor/Development builds**.
 
@@ -294,7 +266,6 @@ In Edit Mode (`Application.isPlaying == false`), the following behavior applies:
 * **No auto-creation**
 * **No static cache updates** (zero side effects)
 * **No impact on Play session state**
-* **Derived types found are logged only, not destroyed** (avoids Undo/Inspector side effects)
 
 This allows safe singleton access from editor scripts and custom inspectors.
 
@@ -334,14 +305,12 @@ public sealed class Bootstrap : MonoBehaviour
 
 | API | Default Behavior |
 | --- | --- |
-| `Object.FindAnyObjectByType<T>(FindObjectsInactive.Exclude)` | **Does not return assets / inactive objects / `HideFlags.DontSave`** |
-| `Object.DontDestroyOnLoad()` | **Only works on root GameObjects (or components on root GameObjects)** |
-| `Application.quitting` | **Invoked when exiting Play Mode in Editor**. May not be called on mobile due to OS behavior |
-| `RuntimeInitializeLoadType.SubsystemRegistration` | **Called before the first scene is loaded** (execution order is undefined) |
-| `Time.frameCount` | **Resets to 0 when entering Play Mode**. Used to guard duplicate initialization |
-| `Application.isPlaying` | **`true` in Play Mode, `false` in Edit Mode** |
-| Domain Reload disabled | **Static field values / static event handlers persist across Play sessions** |
-| Scene Reload disabled | **`OnEnable` / `OnDisable` / `OnDestroy` etc. are called as if newly loaded** |
+| `Object.FindAnyObjectByType<T>(FindObjectsInactive.Exclude)` | Inactive GameObjects are excluded from search |
+| `Object.DontDestroyOnLoad()` | Only works on root GameObjects (or components on root GameObjects) |
+| `Application.quitting` | Invoked when exiting Play Mode in Editor |
+| `RuntimeInitializeLoadType.SubsystemRegistration` | Called before the first scene is loaded |
+| `Time.frameCount` | Resets to 0 when entering Play Mode. Used to guard duplicate initialization |
+| Domain Reload disabled | Static field values / static event handlers persist across Play sessions |
 
 ## IDE Configuration (Rider / ReSharper) 🧰
 
@@ -361,9 +330,10 @@ Depending on team policy, you can prefer adjusting inspection severity via share
 
 ## Platform Notes 📱
 
-### Mobile (Android / iOS)
+### Android
 
-`Application.quitting` may not be called due to OS behavior.
+`Application.quitting` may not be detected while paused.
+
 If needed, also consider `OnApplicationFocus` / `OnApplicationPause` for lifecycle handling.
 
 ## FAQ ❓
@@ -379,8 +349,9 @@ It works, but it's not recommended. Cache the reference in `Start` / `Awake` ins
 
 ### Q. What happens if I define `Awake` in a derived class?
 
-If you don't call `base.Awake()`, `_instance` assignment, reparenting to root, `DontDestroyOnLoad`, and `OnSingletonAwake` invocation will be skipped.
-Always call `base.Awake()` or use `OnSingletonAwake()` instead.
+If you don't call `base.Awake()`, `_instance` assignment, duplicate rejection, reparenting to root, `DontDestroyOnLoad`, and `OnSingletonAwake` invocation will be skipped at scene load time.
+However, as a safety net, `Instance` / `TryGetInstance` will run `Initialize...` when a candidate is found, potentially recovering initialization with a delay.
+In practice, **always call `base.Awake()` or use `OnSingletonAwake()`**.
 
 ### Q. What happens if I write `class A : PersistentSingletonBehaviour<B>`?
 
@@ -390,17 +361,11 @@ Additionally, runtime guards detect misuse early even if it somehow compiles.
 ### Q. Is it safe to call `Instance` in Edit Mode?
 
 Yes. In Edit Mode, only search is performed with no static cache updates or auto-creation.
-If a derived type is found, it is logged only and not destroyed, avoiding Undo system and Inspector side effects.
 
 ### Q. What happens if SceneSingletonBehaviour is not placed in the scene?
 
 In DEV/EDITOR, an `InvalidOperationException` is thrown. In Player, `null` is returned.
 Always place the singleton in the scene.
-
-### Q. Why don't exceptions occur in release builds?
-
-`SingletonLogger.ThrowInvalidOperation` uses the `[Conditional]` attribute, which **removes call sites at compile time** in release builds.
-As a result, no exception is thrown and execution continues, returning `null`.
 
 ## References 📚
 
@@ -409,7 +374,7 @@ As a result, no exception is thrown and execution continues, returning `null`.
 * Domain Reload disabled behavior (static field/event persistence)
   [https://docs.unity3d.com/6000.3/Documentation/Manual/domain-reloading.html](https://docs.unity3d.com/6000.3/Documentation/Manual/domain-reloading.html)
 * Scene Reload disabled behavior (OnEnable/OnDisable/OnDestroy invocation)
-  [https://docs.unity3d.com/6000.3/Documentation/Manual/scene-reloading.html](https://docs.unity3d.com/6000.3/Documentation/Manual/scene-reloading.html)
+  [https://docs.unity3d.com/6000.2/Documentation/Manual/scene-reloading.html](https://docs.unity3d.com/6000.2/Documentation/Manual/scene-reloading.html)
 * RuntimeInitializeOnLoadMethodAttribute
   [https://docs.unity3d.com/6000.3/Documentation/ScriptReference/RuntimeInitializeOnLoadMethodAttribute.html](https://docs.unity3d.com/6000.3/Documentation/ScriptReference/RuntimeInitializeOnLoadMethodAttribute.html)
 * RuntimeInitializeLoadType.SubsystemRegistration
