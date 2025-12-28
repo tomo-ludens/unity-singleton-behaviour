@@ -1,6 +1,5 @@
 {
     "name": "Singletons",
-    "rootNamespace": "Singletons",
     "references": [],
     "includePlatforms": [],
     "excludePlatforms": [],
