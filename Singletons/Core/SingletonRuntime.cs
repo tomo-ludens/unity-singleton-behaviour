@@ -24,6 +24,7 @@ namespace Singletons.Core
         public static int PlaySessionId { get; private set; }
         public static bool IsQuitting { get; private set; }
 
+        private static string LogCategoryName => nameof(SingletonRuntime);
         private static bool IsMainThread =>
             _mainThreadId != UninitializedMainThreadId &&
             _mainThreadId == Thread.CurrentThread.ManagedThreadId;
@@ -56,9 +57,10 @@ namespace Singletons.Core
                 if (_mainThreadId == UninitializedMainThreadId && !TryLazyCaptureMainThreadId(callerContext: callerContext))
                 {
                     SingletonLogger.LogError(
-                        message: $"[SingletonRuntime] {callerContext} must be called from the main thread, but the main thread ID is not initialized yet.\n" +
-                                 $"Current thread: {Thread.CurrentThread.ManagedThreadId}."
+                        message: $"{callerContext} must be called from the main thread, but the main thread ID is not initialized yet.\nCurrent thread: {Thread.CurrentThread.ManagedThreadId}.",
+                        typeTag: LogCategoryName
                     );
+
                     return false;
                 }
             }
@@ -69,8 +71,8 @@ namespace Singletons.Core
             }
 
             SingletonLogger.LogError(
-                message: $"[SingletonRuntime] {callerContext} must be called from the main thread.\n" +
-                         $"Current thread: {Thread.CurrentThread.ManagedThreadId}, Main thread: {_mainThreadId}."
+                message: $"{callerContext} must be called from the main thread.\nCurrent thread: {Thread.CurrentThread.ManagedThreadId}, Main thread: {_mainThreadId}.",
+                typeTag: LogCategoryName
             );
 
             return false;
@@ -116,8 +118,8 @@ namespace Singletons.Core
             _mainThreadId = Thread.CurrentThread.ManagedThreadId;
 
             SingletonLogger.LogWarning(
-                message: $"[SingletonRuntime] Main thread ID lazily captured as {_mainThreadId}.\n" +
-                         $"Context: '{callerContext}'."
+                message: $"Main thread ID lazily captured as {_mainThreadId}.\nContext: '{callerContext}'.",
+                typeTag: LogCategoryName
             );
             return true;
         }

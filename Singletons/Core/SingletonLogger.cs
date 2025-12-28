@@ -20,36 +20,24 @@ namespace Singletons.Core
         private const string DevBuildSymbol = "DEVELOPMENT_BUILD";
 
         [Conditional(conditionString: EditorSymbol), Conditional(conditionString: DevBuildSymbol)]
-        public static void LogWarning(string message)
+        public static void LogWarning(string message, string typeTag, UnityEngine.Object context = null)
         {
-            Debug.LogWarning(message: message);
+            Debug.LogWarning(message: $"[{typeTag}] {message}", context: context);
         }
 
         [Conditional(conditionString: EditorSymbol), Conditional(conditionString: DevBuildSymbol)]
-        public static void LogWarning(string message, UnityEngine.Object context)
+        public static void LogError(string message, string typeTag, UnityEngine.Object context = null)
         {
-            Debug.LogWarning(message: message, context: context);
-        }
-
-        [Conditional(conditionString: EditorSymbol), Conditional(conditionString: DevBuildSymbol)]
-        public static void LogError(string message)
-        {
-            Debug.LogError(message: message);
-        }
-
-        [Conditional(conditionString: EditorSymbol), Conditional(conditionString: DevBuildSymbol)]
-        public static void LogError(string message, UnityEngine.Object context)
-        {
-            Debug.LogError(message: message, context: context);
+            Debug.LogError(message: $"[{typeTag}] {message}", context: context);
         }
 
         /// <summary>
         /// Throws in DEV/EDITOR only. In release builds, call site is removed—execution continues past it.
         /// </summary>
         [Conditional(conditionString: EditorSymbol), Conditional(conditionString: DevBuildSymbol)]
-        public static void ThrowInvalidOperation(string message)
+        public static void ThrowInvalidOperation(string message, string typeTag)
         {
-            throw new InvalidOperationException(message: message);
+            throw new InvalidOperationException(message: $"[{typeTag}] {message}");
         }
     }
 }
