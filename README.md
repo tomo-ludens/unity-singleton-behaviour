@@ -49,16 +49,24 @@ They share the same core logic, while a **policy** controls the lifecycle behavi
 ```text
 Singletons/
 ├── Singletons.asmdef                 # Assembly Definition
+├── AssemblyInfo.cs                   # InternalsVisibleTo for tests
 ├── PersistentSingletonBehaviour.cs   # Public API (persistent + auto-create)
 ├── SceneSingletonBehaviour.cs        # Public API (scene-scoped + no auto-create)
 ├── Core/
 │   ├── SingletonBehaviour.cs         # Core implementation
 │   ├── SingletonRuntime.cs           # Internal runtime (Domain Reload handling)
 │   └── SingletonLogger.cs            # Conditional logger (stripped in release)
-└── Policy/
-    ├── ISingletonPolicy.cs           # Policy interface
-    ├── PersistentPolicy.cs           # Persistent policy implementation
-    └── SceneScopedPolicy.cs          # Scene-scoped policy implementation
+├── Policy/
+│   ├── ISingletonPolicy.cs           # Policy interface
+│   ├── PersistentPolicy.cs           # Persistent policy implementation
+│   └── SceneScopedPolicy.cs          # Scene-scoped policy implementation
+└── Tests/                            # PlayMode & EditMode tests
+    ├── Runtime/
+    │   ├── Singletons.Tests.asmdef
+    │   └── SingletonTests.cs
+    └── Editor/
+        ├── Singletons.Editor.Tests.asmdef
+        └── EditModeTests.cs
 ```
 
 ## Dependencies (Assumed Unity API Behavior)
@@ -328,12 +336,77 @@ This is **intended behavior** for this singleton design, so align your team on o
 * Use suppression comments in code, or
 * Adjust severity via `.DotSettings`, etc.
 
-## Testing (PlayMode tests)
+## Testing
 
-`RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)` also runs in PlayMode tests.
+### Included Tests
 
-* Because `PlaySessionId` advances between tests, static caches are less likely to break tests.
-* If your tests keep static subscriptions or caches, ensure teardown (`TearDown`) unsubscribes and resets them.
+This package includes PlayMode and EditMode tests:
+
+| Category | Tests | Coverage |
+|----------|-------|----------|
+| PersistentSingleton | 10 | Auto-creation, caching, quitting, duplicates |
+| SceneSingleton | 5 | Placement, no auto-create, duplicates |
+| SingletonRuntime | 3 | PlaySessionId, IsQuitting |
+| InactiveInstance | 3 | Inactive GO detection, disabled component |
+| TypeMismatch | 2 | Derived class rejection |
+| ThreadSafety | 2 | Background thread protection |
+| Lifecycle | 3 | Destruction, recreation, multi-session |
+| SceneSingletonEdgeCases | 2 | Not placed, no auto-create |
+| **EditMode** | 4 | SingletonRuntime in Edit Mode |
+
+### Running Tests
+
+1. Open **Window → General → Test Runner**
+2. Select **PlayMode** or **EditMode** tab
+3. Click **Run All**
+
+### Writing Your Own Tests
+
+Test-only APIs are available under `#if UNITY_INCLUDE_TESTS`:
+
+```csharp
+// Reset static instance cache
+MyManager.ResetStaticCacheForTesting();
+
+// Simulate quitting
+SingletonRuntime.SimulateQuittingForTesting();
+
+// Reset quitting flag
+SingletonRuntime.ResetQuittingFlagForTesting();
+
+// Advance PlaySessionId
+SingletonRuntime.AdvancePlaySessionForTesting();
+```
+
+**Example Test:**
+
+```csharp
+[UnityTest]
+public IEnumerator MyManager_AutoCreates()
+{
+    var instance = MyManager.Instance;
+    yield return null;
+    
+    Assert.IsNotNull(instance);
+}
+
+[TearDown]
+public void TearDown()
+{
+    if (MyManager.TryGetInstance(out var instance))
+    {
+        Object.DestroyImmediate(instance.gameObject);
+    }
+    MyManager.ResetStaticCacheForTesting();
+    SingletonRuntime.ResetQuittingFlagForTesting();
+}
+```
+
+### PlayMode Test Considerations
+
+* `RuntimeInitializeOnLoadMethod` runs in PlayMode tests.
+* `PlaySessionId` advances between tests, providing static cache isolation.
+* Always clean up in `TearDown` to avoid test pollution.
 
 ## Known Limitations
 
@@ -341,7 +414,7 @@ This is **intended behavior** for this singleton design, so align your team on o
 If a singleton class has a static constructor, it may execute before `PlaySessionId` is initialized. This can rarely cause unexpected behavior.
 
 ### Thread Safety
-All singleton operations must be called from the main thread. Access from background threads returns null/false.
+All singleton operations must be called from the main thread. Access from background threads throws `UnityException` (because `Application.isPlaying` is a main-thread-only API).
 
 ### Scene Loading Order
 If multiple scenes contain the same singleton type, the destruction order depends on Unity's scene loading sequence.

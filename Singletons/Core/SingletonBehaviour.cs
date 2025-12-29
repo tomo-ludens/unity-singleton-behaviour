@@ -317,5 +317,16 @@ namespace Singletons.Core
             DontDestroyOnLoad(target: this.gameObject);
             this._isPersistent = true;
         }
+
+#if UNITY_INCLUDE_TESTS
+        /// <summary>
+        /// Test-only: Resets static cache for this singleton type.
+        /// </summary>
+        internal static void ResetStaticCacheForTesting()
+        {
+            _instance = null;
+            _cachedPlaySessionId = UninitializedPlaySessionId;
+        }
+#endif
     }
 }

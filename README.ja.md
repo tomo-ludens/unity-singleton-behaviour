@@ -49,16 +49,24 @@ MonoBehaviour 向けの **ポリシー駆動型シングルトン基底クラス
 ```text
 Singletons/
 ├── Singletons.asmdef                 # Assembly Definition
+├── AssemblyInfo.cs                   # InternalsVisibleTo（テスト用）
 ├── PersistentSingletonBehaviour.cs   # Public API (永続・自動生成あり)
 ├── SceneSingletonBehaviour.cs        # Public API (シーン限定・自動生成なし)
 ├── Core/
 │   ├── SingletonBehaviour.cs         # コア実装
 │   ├── SingletonRuntime.cs           # 内部ランタイム (Domain Reload対策)
 │   └── SingletonLogger.cs            # 条件付きロガー (リリースで除去)
-└── Policy/
-    ├── ISingletonPolicy.cs           # ポリシーIF
-    ├── PersistentPolicy.cs           # 永続ポリシーの実装
-    └── SceneScopedPolicy.cs          # シーンスコープポリシーの実装
+├── Policy/
+│   ├── ISingletonPolicy.cs           # ポリシーIF
+│   ├── PersistentPolicy.cs           # 永続ポリシーの実装
+│   └── SceneScopedPolicy.cs          # シーンスコープポリシーの実装
+└── Tests/                            # PlayMode & EditMode テスト
+    ├── Runtime/
+    │   ├── Singletons.Tests.asmdef
+    │   └── SingletonTests.cs
+    └── Editor/
+        ├── Singletons.Editor.Tests.asmdef
+        └── EditModeTests.cs
 ```
 
 ## Dependencies / 前提としている Unity API の挙動
@@ -328,12 +336,77 @@ Edit Mode（`Application.isPlaying == false`）では、次の挙動に固定し
 * コード上の抑制コメントで運用
 * `.DotSettings` 等で Severity を調整
 
-## Testing（PlayMode テスト）
+## Testing / テスト
 
-`RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)` は、PlayMode テスト環境でも実行されます。
+### 同梱テスト
 
-* テスト間で `PlaySessionId` が進むため、通常は static キャッシュが残っても破綻しにくい設計です。
-* ただし、テストコード側で static な購読やキャッシュを持つ場合は、テストの `TearDown` 等で解除・初期化を徹底してください。
+本パッケージには PlayMode および EditMode テストが含まれています：
+
+| カテゴリ | テスト数 | カバレッジ |
+|---------|---------|----------|
+| PersistentSingleton | 10 | 自動生成、キャッシュ、終了時、重複検出 |
+| SceneSingleton | 5 | 配置、自動生成なし、重複検出 |
+| SingletonRuntime | 3 | PlaySessionId、IsQuitting |
+| InactiveInstance | 3 | 非アクティブGO検出、無効コンポーネント |
+| TypeMismatch | 2 | 派生クラス拒否 |
+| ThreadSafety | 2 | バックグラウンドスレッド保護 |
+| Lifecycle | 3 | 破棄、再生成、マルチセッション |
+| SceneSingletonEdgeCases | 2 | 未配置、自動生成なし |
+| **EditMode** | 4 | Edit Mode での SingletonRuntime |
+
+### テストの実行
+
+1. **Window → General → Test Runner** を開く
+2. **PlayMode** または **EditMode** タブを選択
+3. **Run All** をクリック
+
+### 独自テストの作成
+
+テスト専用APIは `#if UNITY_INCLUDE_TESTS` 下で利用可能です：
+
+```csharp
+// staticインスタンスキャッシュをリセット
+MyManager.ResetStaticCacheForTesting();
+
+// 終了をシミュレート
+SingletonRuntime.SimulateQuittingForTesting();
+
+// 終了フラグをリセット
+SingletonRuntime.ResetQuittingFlagForTesting();
+
+// PlaySessionIdを進める
+SingletonRuntime.AdvancePlaySessionForTesting();
+```
+
+**テスト例:**
+
+```csharp
+[UnityTest]
+public IEnumerator MyManager_AutoCreates()
+{
+    var instance = MyManager.Instance;
+    yield return null;
+    
+    Assert.IsNotNull(instance);
+}
+
+[TearDown]
+public void TearDown()
+{
+    if (MyManager.TryGetInstance(out var instance))
+    {
+        Object.DestroyImmediate(instance.gameObject);
+    }
+    MyManager.ResetStaticCacheForTesting();
+    SingletonRuntime.ResetQuittingFlagForTesting();
+}
+```
+
+### PlayMode テストの注意点
+
+* `RuntimeInitializeOnLoadMethod` は PlayMode テストでも実行されます。
+* `PlaySessionId` がテスト間で進むため、static キャッシュの分離が保証されます。
+* テスト汚染を避けるため、`TearDown` で必ずクリーンアップしてください。
 
 ## Known Limitations / 既知の制限事項
 
@@ -341,7 +414,7 @@ Edit Mode（`Application.isPlaying == false`）では、次の挙動に固定し
 シングルトンクラスに静的コンストラクタがある場合、`PlaySessionId`が初期化される前に実行される可能性があります。これにより、まれに予期しない動作を引き起こすことがあります。
 
 ### スレッドセーフティ
-すべてのシングルトン操作はメインスレッドから呼び出す必要があります。バックグラウンドスレッドからのアクセスはnull/falseを返します。
+すべてのシングルトン操作はメインスレッドから呼び出す必要があります。バックグラウンドスレッドからのアクセスは `UnityException` をスローします（`Application.isPlaying` がメインスレッド専用APIのため）。
 
 ### シーン読み込み順序
 複数のシーンに同じシングルトンタイプが含まれる場合、破棄順序はUnityのシーン読み込みシーケンスに依存します。

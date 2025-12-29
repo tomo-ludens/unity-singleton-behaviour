@@ -1,0 +1,22 @@
+{
+    "name": "unity-policy-singleton",
+    "version": "2.3.0",
+    "displayName": "Policy-Driven Singleton",
+    "description": "A policy-driven singleton base class for MonoBehaviour with Domain Reload support.",
+    "unity": "2021.3",
+    "keywords": [
+        "singleton",
+        "monobehaviour",
+        "pattern",
+        "domain-reload"
+    ],
+    "author": {
+        "name": "tomo-ludens",
+        "url": "https://github.com/tomo-ludens"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/tomo-ludens/unity-policy-singleton.git"
+    },
+    "license": "MIT"
+}

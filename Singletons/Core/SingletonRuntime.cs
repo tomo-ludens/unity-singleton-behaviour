@@ -150,5 +150,34 @@ namespace Singletons.Core
             }
         }
 #endif
+
+#if UNITY_INCLUDE_TESTS
+        /// <summary>
+        /// Test-only: Advances PlaySessionId to simulate a new Play session.
+        /// </summary>
+        internal static void AdvancePlaySessionForTesting()
+        {
+            unchecked
+            {
+                PlaySessionId++;
+            }
+        }
+
+        /// <summary>
+        /// Test-only: Resets the quitting flag.
+        /// </summary>
+        internal static void ResetQuittingFlagForTesting()
+        {
+            IsQuitting = false;
+        }
+
+        /// <summary>
+        /// Test-only: Sets the quitting flag to simulate application quit.
+        /// </summary>
+        internal static void SimulateQuittingForTesting()
+        {
+            IsQuitting = true;
+        }
+#endif
     }
 }
