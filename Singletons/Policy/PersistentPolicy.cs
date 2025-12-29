@@ -3,7 +3,7 @@ namespace Singletons.Policy
     /// <summary>
     /// Policy for application-lifetime singletons: persists across scenes, auto-creates if missing.
     /// </summary>
-    /// <seealso cref="Singletons.PersistentSingletonBehaviour{T}"/>
+    /// <seealso cref="Singletons.GlobalSingleton{T}"/>
     public readonly struct PersistentPolicy : ISingletonPolicy
     {
         /// <summary>

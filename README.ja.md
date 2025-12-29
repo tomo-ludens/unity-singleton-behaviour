@@ -1,4 +1,4 @@
-# ポリシー駆動型Unityシングルトン（v2.4.0）
+# ポリシー駆動型Unityシングルトン（v3.0.0）
 
 [English README](./README.md)
 
@@ -6,7 +6,7 @@ MonoBehaviour 向けの **ポリシー駆動型シングルトン基底クラス
 
 ## Requirements / 動作環境
 
-* **Unity 2020.1** 以降（Unity 6.3でテスト済み）
+* **Unity 2022.3** 以降（Unity 6.3でテスト済み）
 * **Enter Play Mode Options** の **Reload Domain** 有効/無効の両方に対応
 * 外部依存なし
 
@@ -50,8 +50,8 @@ MonoBehaviour 向けの **ポリシー駆動型シングルトン基底クラス
 Singletons/
 ├── Singletons.asmdef                 # Assembly Definition
 ├── AssemblyInfo.cs                   # InternalsVisibleTo（テスト用）
-├── GlobalSingleton.cs   # Public API (永続・自動生成あり)
-├── SceneSingleton.cs        # Public API (シーン限定・自動生成なし)
+├── GlobalSingleton.cs                # Public API (永続・自動生成あり)
+├── SceneSingleton.cs                 # Public API (シーン限定・自動生成なし)
 ├── Core/
 │   ├── SingletonBehaviour.cs         # コア実装
 │   ├── SingletonRuntime.cs           # 内部ランタイム (Domain Reload対策)
@@ -87,7 +87,7 @@ Singletons/
 
 ## Usage / 使い方
 
-### 1. Persistent Singleton（永続シングルトン）
+### 1. GlobalSingleton
 
 シーンを跨いで生存し、アクセス時に見つからなければ自動生成します。
 
@@ -112,9 +112,9 @@ public sealed class GameManager : GlobalSingleton<GameManager>
 // GameManager.Instance.AddScore(10);
 ```
 
-### 2. Scene-scoped Singleton（Sceneスコープシングルトン）
+### 2. SceneSingleton（Sceneスコープのシングルトン）
 
-Scene 上に配置して使用します。自動生成は行わず、Scene アンロードと共に破棄されます。
+Scene 上に配置して使用します。配置する必要があります。自動生成は行わず、一つのSceneに内で生存し、Scene アンロードと共に破棄されます。
 
 ```csharp
 using Singletons;
@@ -343,7 +343,7 @@ Edit Mode（`Application.isPlaying == false`）では、次の挙動に固定し
 
 | カテゴリ | テスト数 | カバレッジ |
 |---------|---------|----------|
-| PersistentSingleton | 7 | 自動生成、キャッシュ、重複検出 |
+| GlobalSingleton | 7 | 自動生成、キャッシュ、重複検出 |
 | SceneSingleton | 5 | 配置、自動生成なし、重複検出 |
 | InactiveInstance | 3 | 非アクティブGO検出、無効コンポーネント |
 | TypeMismatch | 2 | 派生クラス拒否 |
@@ -441,7 +441,7 @@ DEV/EDITORでのfail-fast動作によるものです。SceneSingletonがシー�
 初期化が遅延し、最初の`Instance`/`TryGetInstance`アクセス時に実行されます。動作はしますが、タイミングが予期せず遅れるため`base`呼び出しを徹底してください。
 
 **Q. SceneSingletonをシーンに置き忘れたらどうなりますか？**
-DEV/EDITORでは例外、Playerでは`null`/`false`を返します。PersistentSingletonは自動生成されます。
+DEV/EDITORでは例外、Playerでは`null`/`false`を返します。
 
 ### デバッグヒント
 
