@@ -28,7 +28,6 @@ namespace Singletons.Core
         /// </summary>
         public static bool IsQuitting { get; private set; }
 
-        private static string LogCategoryName => nameof(SingletonRuntime);
         private static bool IsMainThread => _mainThreadId != UninitializedMainThreadId && _mainThreadId == Thread.CurrentThread.ManagedThreadId;
 
         internal static void EnsureInitializedForCurrentPlaySession()
@@ -58,11 +57,7 @@ namespace Singletons.Core
 
                 if (_mainThreadId == UninitializedMainThreadId && !TryLazyCaptureMainThreadId(callerContext: callerContext))
                 {
-                    SingletonLogger.LogError(
-                        message: $"{callerContext} must be called from the main thread, but the main thread ID is not initialized yet.\nCurrent thread: {Thread.CurrentThread.ManagedThreadId}.",
-                        typeTag: LogCategoryName
-                    );
-
+                    SingletonLogger.LogError(message: $"{callerContext} must be called from the main thread, but the main thread ID is not initialized yet.\nCurrent thread: {Thread.CurrentThread.ManagedThreadId}.");
                     return false;
                 }
             }
@@ -72,11 +67,7 @@ namespace Singletons.Core
                 return true;
             }
 
-            SingletonLogger.LogError(
-                message: $"{callerContext} must be called from the main thread.\nCurrent thread: {Thread.CurrentThread.ManagedThreadId}, Main thread: {_mainThreadId}.",
-                typeTag: LogCategoryName
-            );
-
+            SingletonLogger.LogError(message: $"{callerContext} must be called from the main thread.\nCurrent thread: {Thread.CurrentThread.ManagedThreadId}, Main thread: {_mainThreadId}.");
             return false;
         }
 
@@ -97,7 +88,6 @@ namespace Singletons.Core
             if (Time.frameCount == _lastBeginFrame) return;
 
             _lastBeginFrame = Time.frameCount;
-
             EnsureInitializedForCurrentPlaySession();
 
             unchecked
@@ -117,15 +107,10 @@ namespace Singletons.Core
         {
             if (_mainThreadId != UninitializedMainThreadId) return true;
             if (!Application.isPlaying) return false;
-
             if (SynchronizationContext.Current == null) return false;
 
             _mainThreadId = Thread.CurrentThread.ManagedThreadId;
-
-            SingletonLogger.LogWarning(
-                message: $"Main thread ID lazily captured as {_mainThreadId}.\nContext: '{callerContext}'.",
-                typeTag: LogCategoryName
-            );
+            SingletonLogger.LogWarning(message: $"Main thread ID lazily captured as {_mainThreadId}.\nContext: '{callerContext}'.");
             return true;
         }
 
@@ -137,7 +122,6 @@ namespace Singletons.Core
             if (_editorHooksInstalled) return;
 
             _editorHooksInstalled = true;
-
             UnityEditor.EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
             UnityEditor.EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
         }
@@ -150,6 +134,5 @@ namespace Singletons.Core
             }
         }
 #endif
-
     }
 }

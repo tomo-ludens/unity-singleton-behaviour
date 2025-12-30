@@ -63,8 +63,8 @@ namespace Singletons.Core
                     if (!candidate.isActiveAndEnabled)
                     {
                         // In release: ThrowInvalidOperation call stripped, returns null below.
-                        SingletonLogger.ThrowInvalidOperation(message: $"Inactive/disabled instance detected.\nFound: '{candidate.name}' (type: '{candidate.GetType().Name}').\nEnable/activate it or remove it from the scene.", typeTag: LogCategoryName);
-                        return null;
+                        SingletonLogger.ThrowInvalidOperation<T>(message: $"Inactive/disabled instance detected.\nFound: '{candidate.name}' (type: '{candidate.GetType().Name}').\nEnable/activate it or remove it from the scene.");
+                    return null;
                     }
 
                     candidate.InitializeForCurrentPlaySessionIfNeeded();
@@ -73,7 +73,7 @@ namespace Singletons.Core
 
                 if (!Policy.AutoCreateIfMissing)
                 {
-                    SingletonLogger.ThrowInvalidOperation(message: "No instance found and auto-creation is disabled by policy.\nPlace an active instance in the scene.", typeTag: LogCategoryName);
+                    SingletonLogger.ThrowInvalidOperation<T>(message: "No instance found and auto-creation is disabled by policy.\nPlace an active instance in the scene.");
                     return null;
                 }
 
@@ -84,7 +84,6 @@ namespace Singletons.Core
         }
 
         private static bool HasCachedInstance => _instance != null;
-        private static string LogCategoryName => typeof(T).FullName;
 
         /// <summary>
         /// Non-creating lookup. Does NOT trigger auto-create even if policy allows.
@@ -126,7 +125,7 @@ namespace Singletons.Core
             {
                 if (!candidate.isActiveAndEnabled)
                 {
-                    SingletonLogger.ThrowInvalidOperation(message: $"Inactive/disabled instance detected.\nFound: '{candidate.name}' (type: '{candidate.GetType().Name}').\nEnable/activate it or remove it from the scene.", typeTag: LogCategoryName);
+                    SingletonLogger.ThrowInvalidOperation<T>(message: $"Inactive/disabled instance detected.\nFound: '{candidate.name}' (type: '{candidate.GetType().Name}').\nEnable/activate it or remove it from the scene.");
                     instance = null;
                     return false;
                 }
@@ -164,7 +163,7 @@ namespace Singletons.Core
 
             if (!_baseAwakeCalled)
             {
-                SingletonLogger.LogError(message: $"base.Awake() was not called in {this.GetType().Name}.\nThis will prevent proper singleton initialization.\nMake sure to call base.Awake() at the beginning of your Awake() method.", typeTag: LogCategoryName, context: this);
+                SingletonLogger.LogError<T>(message: $"base.Awake() was not called in {this.GetType().Name}.\nThis will prevent proper singleton initialization.\nMake sure to call base.Awake() at the beginning of your Awake() method.", context: this);
             }
 
             this.InitializeForCurrentPlaySessionIfNeeded();
@@ -199,7 +198,7 @@ namespace Singletons.Core
             var instance = go.AddComponent<T>();
             instance._isPersistent = Policy.PersistAcrossScenes;
             instance.InitializeForCurrentPlaySessionIfNeeded();
-            SingletonLogger.LogWarning(message: "Auto-created.", typeTag: LogCategoryName, context: instance);
+            SingletonLogger.LogWarning<T>(message: "Auto-created.", context: instance);
 
             return instance;
         }
@@ -209,7 +208,7 @@ namespace Singletons.Core
             if (candidate == null) return null;
             if (candidate.GetType() == typeof(T)) return candidate;
 
-            SingletonLogger.LogError(message: $"Type mismatch found via '{callerContext}'.\nExpected EXACT type '{typeof(T).Name}', but found '{candidate.GetType().Name}'.", typeTag: LogCategoryName, context: candidate);
+            SingletonLogger.LogError<T>(message: $"Type mismatch found via '{callerContext}'.\nExpected EXACT type '{typeof(T).Name}', but found '{candidate.GetType().Name}'.", context: candidate);
 
             if (Application.isPlaying)
             {
@@ -228,7 +227,7 @@ namespace Singletons.Core
             {
                 if (!instance.isActiveAndEnabled)
                 {
-                    SingletonLogger.ThrowInvalidOperation(message: $"Auto-create BLOCKED: inactive instance exists ('{instance.name}', type: '{instance.GetType().Name}').\nEnable it or remove from scene.", typeTag: LogCategoryName);
+                    SingletonLogger.ThrowInvalidOperation<T>(message: $"Auto-create BLOCKED: inactive instance exists ('{instance.name}', type: '{instance.GetType().Name}').\nEnable it or remove from scene.");
                 }
             }
         }
@@ -272,14 +271,14 @@ namespace Singletons.Core
             {
                 if (ReferenceEquals(objA: _instance, objB: this)) return true;
 
-                SingletonLogger.LogWarning(message: $"Duplicate detected. Existing='{_instance.name}', destroying '{this.name}'.", typeTag: LogCategoryName, context: this);
+                SingletonLogger.LogWarning<T>(message: $"Duplicate detected. Existing='{_instance.name}', destroying '{this.name}'.", context: this);
                 Destroy(obj: this.gameObject);
                 return false;
             }
 
             if (this.GetType() != typeof(T))
             {
-                SingletonLogger.LogError(message: $"Type mismatch. Expected='{typeof(T).Name}', Actual='{this.GetType().Name}', destroying '{this.name}'.", typeTag: LogCategoryName, context: this);
+                SingletonLogger.LogError<T>(message: $"Type mismatch. Expected='{typeof(T).Name}', Actual='{this.GetType().Name}', destroying '{this.name}'.", context: this);
                 Destroy(obj: this.gameObject);
                 return false;
             }
@@ -295,7 +294,7 @@ namespace Singletons.Core
 
             if (this.transform.parent != null)
             {
-                SingletonLogger.LogWarning(message: "Reparented to root for DontDestroyOnLoad.", typeTag: LogCategoryName, context: this);
+                SingletonLogger.LogWarning<T>(message: "Reparented to root for DontDestroyOnLoad.", context: this);
                 this.transform.SetParent(parent: null, worldPositionStays: true);
             }
 
