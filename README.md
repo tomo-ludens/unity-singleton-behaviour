@@ -1,12 +1,39 @@
-# Policy-Driven Unity Singleton (v2.4.0)
+# Policy-Driven Unity Singleton (v3.0.0)
 
 [Japanese README](./README.ja.md)
 
 A **policy-driven singleton base class** for MonoBehaviour.
 
+## Table of Contents
+
+- [Requirements](#requirements)
+- [Performance Considerations](#performance-considerations)
+- [Overview](#overview)
+  - [Provided Classes](#provided-classes)
+  - [Key Features](#key-features)
+- [Directory Structure](#directory-structure)
+- [Dependencies](#dependencies-assumed-unity-api-behavior)
+- [Installation](#installation)
+- [Usage](#usage)
+  - [GlobalSingleton](#1-globalsingleton)
+  - [SceneSingleton](#2-scenesingleton)
+  - [Choosing Between Instance and TryGetInstance](#3-choosing-between-instance-and-trygetinstance-typical-patterns)
+  - [Caching is Recommended](#4-caching-is-recommended-important)
+- [Public API Details](#public-api-details)
+- [Design Intent](#design-intent-notes)
+- [Constraints & Best Practices](#constraints--best-practices)
+- [Advanced Topics](#advanced-topics)
+- [Edit Mode Behavior](#edit-mode-behavior-details)
+- [IDE Configuration](#ide-configuration-rider--resharper)
+- [Testing](#testing)
+- [Known Limitations](#known-limitations)
+- [Troubleshooting](#troubleshooting)
+- [References](#references)
+- [License](#license)
+
 ## Requirements
 
-* **Unity 2020.1** or later (tested with Unity 6.3)
+* **Unity 2022.3** or later (tested with Unity 6.3)
 * Supports both enabled and disabled **Reload Domain** in **Enter Play Mode Options**
 * No external dependencies
 
@@ -50,8 +77,8 @@ They share the same core logic, while a **policy** controls the lifecycle behavi
 Singletons/
 ├── Singletons.asmdef                 # Assembly Definition
 ├── AssemblyInfo.cs                   # InternalsVisibleTo for tests
-├── GlobalSingleton.cs   # Public API (persistent + auto-create)
-├── SceneSingleton.cs        # Public API (scene-scoped + no auto-create)
+├── GlobalSingleton.cs                # Public API (persistent + auto-create)
+├── SceneSingleton.cs                 # Public API (scene-scoped + no auto-create)
 ├── Core/
 │   ├── SingletonBehaviour.cs         # Core implementation
 │   ├── SingletonRuntime.cs           # Internal runtime (Domain Reload handling)
@@ -87,7 +114,7 @@ This implementation assumes the following Unity behaviors. If Unity changes thes
 
 ## Usage
 
-### 1. Persistent Singleton
+### 1. GlobalSingleton
 
 Persists across scenes, and auto-creates when accessed if not found.
 
@@ -98,21 +125,64 @@ using Singletons;
 public sealed class GameManager : GlobalSingleton<GameManager>
 {
     public int Score { get; private set; }
+    public int CurrentLevel { get; private set; }
 
     protected override void Awake()
     {
         base.Awake(); // Required - initializes singleton
         Score = 0;
+        CurrentLevel = 1;
+    }
+
+    // Per-play-session reinitialization (especially with Domain Reload disabled)
+    protected override void OnPlaySessionStart()
+    {
+        // Called at the start of each play session (Play Mode start or restart with Domain Reload disabled)
+        // Awake is called only on first run, but OnPlaySessionStart is called every play session
+        Debug.Log($"New play session started. Current level: {CurrentLevel}");
+        
+        // Reset session-specific state
+        // Example: temporary data, event subscriptions, caches, etc.
+        ResetTemporaryData();
+        RebindEvents();
+    }
+
+    private void ResetTemporaryData()
+    {
+        // Clear temporary data that shouldn't persist between play sessions
+        // Example: UI state, unsaved work-in-progress data, etc.
+    }
+
+    private void RebindEvents()
+    {
+        // Re-subscribe to events (in case subscriptions are lost with Domain Reload disabled)
+        // Example: GameManager.OnGameStateChanged += HandleGameStateChanged;
     }
 
     public void AddScore(int value) => Score += value;
+    public void NextLevel() => CurrentLevel++;
 }
 
 // Example:
 // GameManager.Instance.AddScore(10);
+// GameManager.Instance.NextLevel();
 ```
 
-### 2. Scene-scoped Singleton
+#### Importance of OnPlaySessionStart
+
+`OnPlaySessionStart` is especially important when **Domain Reload is disabled**:
+
+| Method | Called When | Purpose |
+|--------|-------------|---------|
+| `Awake()` | Only on first Play Mode start | Persistent initialization (resource loading, static settings) |
+| `OnPlaySessionStart()` | **Every play session** | Session-specific initialization (temporary data, event subscriptions) |
+
+**Why is it needed?**
+- When Domain Reload is disabled, static fields persist between play sessions
+- Event subscriptions and temporary data might remain from the previous session
+- `OnPlaySessionStart` ensures a clean state for each session
+
+### 2. SceneSingleton
 
 Must be placed in the scene. No auto-creation. Destroyed when the scene unloads.
 
@@ -343,7 +413,7 @@ This package includes comprehensive PlayMode and EditMode tests with **53 total 
 
 | Category | Tests | Coverage |
 |----------|-------|----------|
-| PersistentSingleton | 7 | Auto-creation, caching, duplicates |
+| GlobalSingleton | 7 | Auto-creation, caching, duplicates |
 | SceneSingleton | 5 | Placement, no auto-create, duplicates |
 | InactiveInstance | 3 | Inactive GO detection, disabled component |
 | TypeMismatch | 2 | Derived class rejection |
@@ -441,7 +511,7 @@ It works, but it is not recommended. Cache it in `Start` / `Awake`.
 Initialization is deferred and occurs on the first `Instance` / `TryGetInstance` access. It still runs, but the timing becomes unexpectedly late, so always call the base method.
 
 **Q. What happens if I forget to place a SceneSingleton in the scene?**
-DEV/EDITOR throws an exception; Player builds return `null` / `false`. PersistentSingleton auto-creates if not found.
+DEV/EDITOR throws an exception; Player builds return `null` / `false`. GlobalSingleton auto-creates if not found.
 
 ### Debugging Tips
 

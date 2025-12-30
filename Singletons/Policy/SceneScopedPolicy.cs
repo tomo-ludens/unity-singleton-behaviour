@@ -3,7 +3,7 @@ namespace Singletons.Policy
     /// <summary>
     /// Policy for scene-local singletons: no persistence, no auto-creation.
     /// </summary>
-    /// <seealso cref="Singletons.SceneSingletonBehaviour{T}"/>
+    /// <seealso cref="Singletons.SceneSingleton{T}"/>
     public readonly struct SceneScopedPolicy : ISingletonPolicy
     {
         /// <summary>

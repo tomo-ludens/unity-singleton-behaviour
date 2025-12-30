@@ -42,10 +42,7 @@ namespace Singletons.Core
             {
                 if (!Application.isPlaying)
                 {
-                    return AsExactType(
-                        candidate: FindAnyObjectByType<T>(findObjectsInactive: FindInactivePolicy),
-                        callerContext: "Instance[EditMode]"
-                    );
+                    return AsExactType(candidate: FindAnyObjectByType<T>(findObjectsInactive: FindInactivePolicy), callerContext: "Instance[EditMode]");
                 }
 
                 if (!SingletonRuntime.ValidateMainThread(callerContext: $"{typeof(T).Name}.Instance"))
@@ -66,11 +63,7 @@ namespace Singletons.Core
                     if (!candidate.isActiveAndEnabled)
                     {
                         // In release: ThrowInvalidOperation call stripped, returns null below.
-                        SingletonLogger.ThrowInvalidOperation(
-                            message: $"Inactive/disabled instance detected.\nFound: '{candidate.name}' (type: '{candidate.GetType().Name}').\nEnable/activate it or remove it from the scene.",
-                            typeTag: LogCategoryName
-                        );
-
+                        SingletonLogger.ThrowInvalidOperation(message: $"Inactive/disabled instance detected.\nFound: '{candidate.name}' (type: '{candidate.GetType().Name}').\nEnable/activate it or remove it from the scene.", typeTag: LogCategoryName);
                         return null;
                     }
 
@@ -80,16 +73,11 @@ namespace Singletons.Core
 
                 if (!Policy.AutoCreateIfMissing)
                 {
-                    SingletonLogger.ThrowInvalidOperation(
-                        message: "No instance found and auto-creation is disabled by policy.\nPlace an active instance in the scene.",
-                        typeTag: LogCategoryName
-                    );
-
+                    SingletonLogger.ThrowInvalidOperation(message: "No instance found and auto-creation is disabled by policy.\nPlace an active instance in the scene.", typeTag: LogCategoryName);
                     return null;
                 }
 
                 ThrowIfInactiveInstanceExists();
-
                 _instance = CreateInstance();
                 return _instance;
             }
@@ -138,10 +126,7 @@ namespace Singletons.Core
             {
                 if (!candidate.isActiveAndEnabled)
                 {
-                    SingletonLogger.ThrowInvalidOperation(
-                        message: $"Inactive/disabled instance detected.\nFound: '{candidate.name}' (type: '{candidate.GetType().Name}').\nEnable/activate it or remove it from the scene.",
-                        typeTag: LogCategoryName
-                    );
+                    SingletonLogger.ThrowInvalidOperation(message: $"Inactive/disabled instance detected.\nFound: '{candidate.name}' (type: '{candidate.GetType().Name}').\nEnable/activate it or remove it from the scene.", typeTag: LogCategoryName);
                     instance = null;
                     return false;
                 }
@@ -179,11 +164,7 @@ namespace Singletons.Core
 
             if (!_baseAwakeCalled)
             {
-                SingletonLogger.LogError(
-                    message: $"base.Awake() was not called in {this.GetType().Name}.\nThis will prevent proper singleton initialization.\nMake sure to call base.Awake() at the beginning of your Awake() method.",
-                    typeTag: LogCategoryName,
-                    context: this
-                );
+                SingletonLogger.LogError(message: $"base.Awake() was not called in {this.GetType().Name}.\nThis will prevent proper singleton initialization.\nMake sure to call base.Awake() at the beginning of your Awake() method.", typeTag: LogCategoryName, context: this);
             }
 
             this.InitializeForCurrentPlaySessionIfNeeded();
@@ -202,7 +183,9 @@ namespace Singletons.Core
         /// <summary>
         /// Override for per-session reinitialization when Domain Reload is disabled.
         /// </summary>
-        protected virtual void OnPlaySessionStart() { }
+        protected virtual void OnPlaySessionStart()
+        {
+        }
 
         private static T CreateInstance()
         {
@@ -245,10 +228,7 @@ namespace Singletons.Core
             {
                 if (!instance.isActiveAndEnabled)
                 {
-                    SingletonLogger.ThrowInvalidOperation(
-                        message: $"Auto-create BLOCKED: inactive instance exists ('{instance.name}', type: '{instance.GetType().Name}').\nEnable it or remove from scene.",
-                        typeTag: LogCategoryName
-                    );
+                    SingletonLogger.ThrowInvalidOperation(message: $"Auto-create BLOCKED: inactive instance exists ('{instance.name}', type: '{instance.GetType().Name}').\nEnable it or remove from scene.", typeTag: LogCategoryName);
                 }
             }
         }
@@ -322,6 +302,5 @@ namespace Singletons.Core
             DontDestroyOnLoad(target: this.gameObject);
             this._isPersistent = true;
         }
-
     }
 }

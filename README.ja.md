@@ -1,12 +1,39 @@
-# ポリシー駆動型Unityシングルトン（v2.4.0）
+# ポリシー駆動型Unityシングルトン（v3.0.0）
 
 [English README](./README.md)
 
 MonoBehaviour 向けの **ポリシー駆動型シングルトン基底クラス**です。
 
+## 目次
+
+- [動作環境](#requirements--動作環境)
+- [パフォーマンス考慮事項](#performance-considerations--パフォーマンス考慮事項)
+- [概要](#overview--概要)
+  - [提供クラス](#提供クラス)
+  - [主な特長](#主な特長)
+- [ディレクトリ構成](#directory-structure--ディレクトリ構成)
+- [前提としている Unity API の挙動](#dependencies--前提としている-unity-api-の挙動)
+- [インストール](#installation--インストール)
+- [使い方](#usage--使い方)
+  - [GlobalSingleton](#1-globalsingleton)
+  - [SceneSingleton](#2-scenesingleton（sceneスコープのシングルトン）)
+  - [Instance と TryGetInstance の使い分け](#3-instance-と-trygetinstance-の使い分け典型例)
+  - [キャッシュの推奨](#4-キャッシュの推奨重要)
+- [Public API Details](#public-api-details)
+- [設計意図（補足）](#design-intent--設計意図補足)
+- [制約と推奨事項](#constraints--best-practices--制約と推奨事項)
+- [Advanced Topics](#advanced-topics)
+- [Edit Mode の挙動](#edit-mode-の挙動詳細)
+- [IDE Configuration](#ide-configurationrider--resharper)
+- [テスト](#testing--テスト)
+- [既知の制限事項](#known-limitations--既知の制限事項)
+- [トラブルシューティング](#troubleshooting--トラブルシューティング)
+- [References](#references)
+- [License](#license)
+
 ## Requirements / 動作環境
 
-* **Unity 2020.1** 以降（Unity 6.3でテスト済み）
+* **Unity 2022.3** 以降（Unity 6.3でテスト済み）
 * **Enter Play Mode Options** の **Reload Domain** 有効/無効の両方に対応
 * 外部依存なし
 
@@ -50,8 +77,8 @@ MonoBehaviour 向けの **ポリシー駆動型シングルトン基底クラス
 Singletons/
 ├── Singletons.asmdef                 # Assembly Definition
 ├── AssemblyInfo.cs                   # InternalsVisibleTo（テスト用）
-├── GlobalSingleton.cs   # Public API (永続・自動生成あり)
-├── SceneSingleton.cs        # Public API (シーン限定・自動生成なし)
+├── GlobalSingleton.cs                # Public API (永続・自動生成あり)
+├── SceneSingleton.cs                 # Public API (シーン限定・自動生成なし)
 ├── Core/
 │   ├── SingletonBehaviour.cs         # コア実装
 │   ├── SingletonRuntime.cs           # 内部ランタイム (Domain Reload対策)
@@ -87,7 +114,7 @@ Singletons/
 
 ## Usage / 使い方
 
-### 1. Persistent Singleton（永続シングルトン）
+### 1. GlobalSingleton
 
 シーンを跨いで生存し、アクセス時に見つからなければ自動生成します。
 
@@ -98,23 +125,66 @@ using Singletons;
 public sealed class GameManager : GlobalSingleton<GameManager>
 {
     public int Score { get; private set; }
+    public int CurrentLevel { get; private set; }
 
     protected override void Awake()
     {
         base.Awake(); // 必須 - シングルトンを初期化します
         Score = 0;
+        CurrentLevel = 1;
+    }
+
+    // Playセッションごとの再初期化（Domain Reload無効時など）
+    protected override void OnPlaySessionStart()
+    {
+        // Playセッション開始時（Play Mode開始時やDomain Reload無効での再開時）に呼ばれる
+        // Awakeは初回のみだが、OnPlaySessionStartはPlayセッションごとに呼ばれる
+        Debug.Log($"New play session started. Current level: {CurrentLevel}");
+        
+        // セッションごとの状態をリセット
+        // 例: 一時的なデータ、イベント購読、キャッシュなど
+        ResetTemporaryData();
+        RebindEvents();
+    }
+
+    private void ResetTemporaryData()
+    {
+        // Playセッション間で保持したくない一時データをクリア
+        // 例: UI状態、未保存の作業中データなど
+    }
+
+    private void RebindEvents()
+    {
+        // イベントの再購読（Domain Reload無効時などに購読が失われる場合）
+        // 例: GameManager.OnGameStateChanged += HandleGameStateChanged;
     }
 
     public void AddScore(int value) => Score += value;
+    public void NextLevel() => CurrentLevel++;
 }
 
 // 利用例:
 // GameManager.Instance.AddScore(10);
+// GameManager.Instance.NextLevel();
 ```
 
-### 2. Scene-scoped Singleton（Sceneスコープシングルトン）
+#### OnPlaySessionStart の重要性
 
-Scene 上に配置して使用します。自動生成は行わず、Scene アンロードと共に破棄されます。
+`OnPlaySessionStart` は特に **Domain Reload を無効にしている場合** に重要です：
+
+| メソッド | 呼ばれるタイミング | 用途 |
+|---------|------------------|------|
+| `Awake()` | 初回のPlay Mode開始時のみ | 永続的な初期化（リソース読み込み、静的設定） |
+| `OnPlaySessionStart()` | **Playセッションごと** | セッション固有の初期化（一時データ、イベント購読） |
+
+**なぜ必要か？**
+- Domain Reload無効時、staticフィールドがPlayセッション間で保持される
+- イベント購読や一時データが前回のセッションから残っている可能性がある
+- `OnPlaySessionStart` でクリーンな状態を保証できる
+
+### 2. SceneSingleton（Sceneスコープのシングルトン）
+
+Scene 上に配置して使用します。配置する必要があります。自動生成は行わず、一つのSceneに内で生存し、Scene アンロードと共に破棄されます。
 
 ```csharp
 using Singletons;
@@ -343,11 +413,11 @@ Edit Mode（`Application.isPlaying == false`）では、次の挙動に固定し
 
 | カテゴリ | テスト数 | カバレッジ |
 |---------|---------|----------|
-| PersistentSingleton | 7 | 自動生成、キャッシュ、重複検出 |
+| GlobalSingleton | 7 | 自動生成、キャッシュ、重複検出 |
 | SceneSingleton | 5 | 配置、自動生成なし、重複検出 |
 | InactiveInstance | 3 | 非アクティブGO検出、無効コンポーネント |
 | TypeMismatch | 2 | 派生クラス拒否 |
-| ThreadSafety | 7 | バックグラウンドスレッド保護、メインロード検証 |
+| ThreadSafety | 7 | バックグラウンドスレッド保護、メインスレッド検証 |
 | Lifecycle | 2 | 破棄、再生成 |
 | SoftReset | 1 | PlaySessionId 境界での Playごとの再初期化 |
 | SceneSingletonEdgeCase | 2 | 未配置、自動生成なし |
@@ -441,7 +511,7 @@ DEV/EDITORでのfail-fast動作によるものです。SceneSingletonがシー�
 初期化が遅延し、最初の`Instance`/`TryGetInstance`アクセス時に実行されます。動作はしますが、タイミングが予期せず遅れるため`base`呼び出しを徹底してください。
 
 **Q. SceneSingletonをシーンに置き忘れたらどうなりますか？**
-DEV/EDITORでは例外、Playerでは`null`/`false`を返します。PersistentSingletonは自動生成されます。
+DEV/EDITORでは例外、Playerでは`null`/`false`を返します。GlobalSingletonは見つからなければ自動生成されます。
 
 ### デバッグヒント
 
