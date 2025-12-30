@@ -425,21 +425,24 @@ namespace Singletons.Tests.Runtime
         }
 
         [UnityTest]
-        public IEnumerator BackgroundThread_ThrowsUnityException()
+        public IEnumerator BackgroundThread_Instance_ReturnsNull()
         {
-            // Unity API (Application.isPlaying) throws when called from background thread
-            System.Exception threadException = null;
+            // First, ensure main thread ID is captured by accessing from main thread
+            _ = TestPersistentSingleton.Instance;
+            yield return null;
+
+            // Expect error log from ValidateMainThread
+            LogAssert.Expect(type: LogType.Error, message: new System.Text.RegularExpressions.Regex(pattern: "must be called from the main thread"));
+
+            // Background thread access should return null (not throw)
+            TestPersistentSingleton backgroundResult = null;
             bool threadCompleted = false;
 
             var thread = new System.Threading.Thread(() =>
             {
                 try
                 {
-                    var _ = TestPersistentSingleton.Instance;
-                }
-                catch (System.Exception ex)
-                {
-                    threadException = ex;
+                    backgroundResult = TestPersistentSingleton.Instance;
                 }
                 finally
                 {
@@ -454,28 +457,27 @@ namespace Singletons.Tests.Runtime
                 yield return null;
             }
 
-            Assert.IsNotNull(anObject: threadException, message: "Should throw exception from background thread");
-            Assert.IsInstanceOf<UnityException>(actual: threadException, message: "Should be UnityException for main-thread-only API");
+            Assert.IsNull(anObject: backgroundResult, message: "Instance should return null from background thread");
         }
 
         [UnityTest]
-        public IEnumerator BackgroundThread_TryGetInstance_ThrowsUnityException()
+        public IEnumerator BackgroundThread_TryGetInstance_ReturnsFalse()
         {
             _ = TestPersistentSingleton.Instance;
             yield return null;
 
-            System.Exception threadException = null;
+            // Expect error log from ValidateMainThread
+            LogAssert.Expect(type: LogType.Error, message: new System.Text.RegularExpressions.Regex(pattern: "must be called from the main thread"));
+
+            bool tryGetResult = true;
+            TestPersistentSingleton backgroundInstance = null;
             bool threadCompleted = false;
 
             var thread = new System.Threading.Thread(() =>
             {
                 try
                 {
-                    TestPersistentSingleton.TryGetInstance(instance: out var _);
-                }
-                catch (System.Exception ex)
-                {
-                    threadException = ex;
+                    tryGetResult = TestPersistentSingleton.TryGetInstance(instance: out backgroundInstance);
                 }
                 finally
                 {
@@ -490,8 +492,8 @@ namespace Singletons.Tests.Runtime
                 yield return null;
             }
 
-            Assert.IsNotNull(anObject: threadException, message: "Should throw exception from background thread");
-            Assert.IsInstanceOf<UnityException>(actual: threadException, message: "Should be UnityException for main-thread-only API");
+            Assert.IsFalse(condition: tryGetResult, message: "TryGetInstance should return false from background thread");
+            Assert.IsNull(anObject: backgroundInstance, message: "Instance should be null from background thread");
         }
 
         [UnityTest]
@@ -562,20 +564,23 @@ namespace Singletons.Tests.Runtime
         [UnityTest]
         public IEnumerator ThreadSafety_ValidationLayer_PreventsBackgroundAccess()
         {
+            // First, ensure main thread ID is captured
+            _ = TestPersistentSingleton.Instance;
+            yield return null;
+
+            // Expect error log from ValidateMainThread
+            LogAssert.Expect(type: LogType.Error, message: new System.Text.RegularExpressions.Regex(pattern: "must be called from the main thread"));
+
             // Test that the thread safety validation layer properly prevents background thread access
-            System.Exception threadException = null;
+            TestPersistentSingleton backgroundResult = null;
             bool threadCompleted = false;
 
             var thread = new System.Threading.Thread(() =>
             {
                 try
                 {
-                    // This should trigger the main thread validation
-                    _ = TestPersistentSingleton.Instance;
-                }
-                catch (System.Exception ex)
-                {
-                    threadException = ex;
+                    // This should trigger the main thread validation and return null
+                    backgroundResult = TestPersistentSingleton.Instance;
                 }
                 finally
                 {
@@ -590,11 +595,7 @@ namespace Singletons.Tests.Runtime
                 yield return null;
             }
 
-            Assert.IsNotNull(anObject: threadException, message: "Background thread access should be blocked");
-            Assert.IsTrue(
-                condition: threadException.Message.Contains(value: "main thread") || threadException.Message.Contains(value: "UnityException") || threadException.GetType() == typeof(UnityException),
-                message: "Exception should indicate main thread requirement"
-                );
+            Assert.IsNull(anObject: backgroundResult, message: "Background thread access should return null");
         }
 
         [Test]

@@ -54,10 +54,21 @@ namespace Singletons.Core
         /// <returns>True if on main thread; false otherwise.</returns>
         internal static bool ValidateMainThread(string callerContext)
         {
-            if (!Application.isPlaying) return true;
-
-            if (_mainThreadId == UninitializedMainThreadId)
+            if (_mainThreadId != UninitializedMainThreadId)
             {
+                if (IsMainThread)
+                {
+                    return true;
+                }
+
+                SingletonLogger.LogError(message: $"{callerContext} must be called from the main thread.\nCurrent thread: {Thread.CurrentThread.ManagedThreadId}, Main thread: {_mainThreadId}.");
+                return false;
+            }
+
+            try
+            {
+                if (!Application.isPlaying) return true;
+
                 EnsureInitializedForCurrentPlaySession();
 
                 if (_mainThreadId == UninitializedMainThreadId && !TryLazyCaptureMainThreadId(callerContext: callerContext))
@@ -65,15 +76,20 @@ namespace Singletons.Core
                     SingletonLogger.LogError(message: $"{callerContext} must be called from the main thread, but the main thread ID is not initialized yet.\nCurrent thread: {Thread.CurrentThread.ManagedThreadId}.");
                     return false;
                 }
-            }
 
-            if (IsMainThread)
+                if (IsMainThread)
+                {
+                    return true;
+                }
+
+                SingletonLogger.LogError(message: $"{callerContext} must be called from the main thread.\nCurrent thread: {Thread.CurrentThread.ManagedThreadId}, Main thread: {_mainThreadId}.");
+                return false;
+            }
+            catch (UnityException)
             {
-                return true;
+                // Unity API called from background thread - return false instead of propagating exception
+                return false;
             }
-
-            SingletonLogger.LogError(message: $"{callerContext} must be called from the main thread.\nCurrent thread: {Thread.CurrentThread.ManagedThreadId}, Main thread: {_mainThreadId}.");
-            return false;
         }
 
         /// <summary>

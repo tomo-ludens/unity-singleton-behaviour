@@ -40,14 +40,14 @@ namespace Singletons.Core
         {
             get
             {
-                if (!Application.isPlaying)
-                {
-                    return AsExactType(candidate: FindAnyObjectByType<T>(findObjectsInactive: FindInactivePolicy), callerContext: "Instance[EditMode]");
-                }
-
                 if (!SingletonRuntime.ValidateMainThread(callerContext: $"{typeof(T).Name}.Instance"))
                 {
                     return null;
+                }
+
+                if (!Application.isPlaying)
+                {
+                    return AsExactType(candidate: FindAnyObjectByType<T>(findObjectsInactive: FindInactivePolicy), callerContext: "Instance[EditMode]");
                 }
 
                 InvalidateInstanceCacheIfPlaySessionChanged();
@@ -95,17 +95,17 @@ namespace Singletons.Core
         /// <returns><c>true</c> if instance exists and is valid; otherwise <c>false</c>.</returns>
         public static bool TryGetInstance(out T instance)
         {
+            if (!SingletonRuntime.ValidateMainThread(callerContext: $"{typeof(T).Name}.TryGetInstance"))
+            {
+                instance = null;
+                return false;
+            }
+
             if (!Application.isPlaying)
             {
                 instance = FindAnyObjectByType<T>(findObjectsInactive: FindInactivePolicy);
                 instance = AsExactType(candidate: instance, callerContext: "TryGetInstance[EditMode]");
                 return instance != null;
-            }
-
-            if (!SingletonRuntime.ValidateMainThread(callerContext: $"{typeof(T).Name}.TryGetInstance"))
-            {
-                instance = null;
-                return false;
             }
 
             InvalidateInstanceCacheIfPlaySessionChanged();

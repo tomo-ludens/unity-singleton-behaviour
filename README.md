@@ -1,4 +1,4 @@
-# Policy-Driven Unity Singleton (v3.0.6)
+# Policy-Driven Unity Singleton (v3.1.0)
 
 [Japanese README](./README.ja.md)
 
@@ -161,7 +161,7 @@ classDiagram
     ┌─────────────────────┐              ┌─────────────────────┐
     │  PlaySessionId: 1   │              │  PlaySessionId: 2   │
     └─────────────────────┘              └─────────────────────┘
-              │                                    │
+              │                                  │
     ┌─────────▼─────────┐              ┌─────────▼─────────┐
     │ Static cache OK   │              │ Static cache OK   │
     │ Instance: 0xABC   │   ───────▶   │ Instance: 0xABC   │ (same object)
@@ -611,7 +611,7 @@ public void TearDown()
 If a singleton class has a static constructor, it may execute before `PlaySessionId` is initialized. This can rarely cause unexpected behavior.
 
 ### Thread Safety
-All singleton operations must be called from the main thread. Access from background threads throws `UnityException` (because `Application.isPlaying` is a main-thread-only API).
+All singleton operations must be called from the main thread. Access from background threads returns `null` / `false` instead of throwing exceptions, ensuring stable behavior across Unity versions.
 
 ### Scene Loading Order
 If multiple scenes contain the same singleton type, the destruction order depends on Unity's scene loading sequence.

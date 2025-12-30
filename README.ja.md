@@ -1,4 +1,4 @@
-# ポリシー駆動型Unityシングルトン（v3.0.6）
+# ポリシー駆動型Unityシングルトン（v3.1.0）
 
 [English README](./README.md)
 
@@ -163,7 +163,7 @@ classDiagram
     │  PlaySessionId: 1   │              │  PlaySessionId: 2   │
     │  _instance: 0xABC   │              │  _instance: 0xABC   │ (same object)
     └─────────────────────┘              └─────────────────────┘
-              │                                    │
+              │                                  │
     ┌─────────▼─────────┐              ┌─────────▼─────────┐
     │ Static cache OK   │              │ Static cache OK   │
     │ Instance: 0xABC   │   ───────▶   │ Instance: 0xABC   │ (same object)
@@ -613,7 +613,7 @@ public void TearDown()
 シングルトンクラスに静的コンストラクタがある場合、`PlaySessionId`が初期化される前に実行される可能性があります。これにより、まれに予期しない動作を引き起こすことがあります。
 
 ### スレッドセーフティ
-すべてのシングルトン操作はメインスレッドから呼び出す必要があります。バックグラウンドスレッドからのアクセスは `UnityException` をスローします（`Application.isPlaying` がメインスレッド専用APIのため）。
+すべてのシングルトン操作はメインスレッドから呼び出す必要があります。バックグラウンドスレッドからのアクセスは例外をスローせず、`null` / `false` を返します。これにより、Unityバージョン間で安定した動作を保証します。
 
 ### シーン読み込み順序
 複数のシーンに同じシングルトンタイプが含まれる場合、破棄順序はUnityのシーン読み込みシーケンスに依存します。
