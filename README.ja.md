@@ -1,4 +1,4 @@
-# ポリシー駆動型Unityシングルトン（v3.0.4）
+# ポリシー駆動型Unityシングルトン（v3.0.5）
 
 [English README](./README.md)
 
@@ -75,27 +75,28 @@ MonoBehaviour 向けの **ポリシー駆動型シングルトン基底クラス
 
 ```text
 Singletons/
-├── Singletons.asmdef                 # Assembly Definition
-├── AssemblyInfo.cs                   # InternalsVisibleTo（テスト用）
-├── GlobalSingleton.cs                # Public API (永続・自動生成あり)
-├── SceneSingleton.cs                 # Public API (シーン限定・自動生成なし)
+├── Singletons.asmdef                       # Assembly Definition
+├── AssemblyInfo.cs                         # InternalsVisibleTo（テスト用）
+├── GlobalSingleton.cs                      # Public API（永続・自動生成あり）
+├── SceneSingleton.cs                       # Public API（シーン限定・自動生成なし）
 ├── Core/
-│   ├── SingletonBehaviour.cs         # コア実装
-│   ├── SingletonRuntime.cs           # 内部ランタイム (Domain Reload対策)
-│   ├── SingletonLogger.cs            # 条件付きロガー (リリースで除去)
+│   ├── SingletonBehaviour.cs               # コア実装
+│   ├── SingletonRuntime.cs                 # 内部ランタイム（Domain Reload対策）
+│   ├── SingletonLogger.cs                  # 条件付きロガー（リリースで除去）
 │   └── Editor/
-│       └── SingletonEditorHooks.cs   # Editorイベントフック (Play Mode状態)
+│       └── SingletonEditorHooks.cs         # Editorイベントフック（Play Mode状態）
 ├── Policy/
-│   ├── ISingletonPolicy.cs           # ポリシーIF
-│   ├── PersistentPolicy.cs           # 永続ポリシーの実装
-│   └── SceneScopedPolicy.cs          # シーンスコープポリシーの実装
-└── Tests/                            # PlayMode & EditMode テスト
-    ├── Runtime/
-    │   ├── Singletons.Tests.asmdef
-    │   └── SingletonTests.cs
-    └── Editor/
-        ├── Singletons.Editor.Tests.asmdef
-        └── EditModeTests.cs
+│   ├── ISingletonPolicy.cs                 # ポリシーインターフェース
+│   ├── PersistentPolicy.cs                 # 永続ポリシーの実装
+│   └── SceneScopedPolicy.cs                # シーンスコープポリシーの実装
+└── Tests/                                  # PlayMode & EditMode テスト
+    ├── TestExtensions.cs                   # テストヘルパー
+    ├── Editor/
+    │   ├── Singletons.Editor.Tests.asmdef  # Editor用アセンブリ定義
+    │   └── EditModeTests.cs                # EditModeテスト
+    └── Runtime/
+        ├── Singletons.Tests.asmdef         # Runtime用アセンブリ定義
+        └── SingletonTests.cs               # PlayModeテスト
 ```
 
 ## Dependencies / 前提としている Unity API の挙動

@@ -68,7 +68,7 @@ namespace Singletons.Core
                     {
                         // In release: ThrowInvalidOperation call stripped, returns null below.
                         SingletonLogger.ThrowInvalidOperation<T>(message: $"Inactive/disabled instance detected.\nFound: '{candidate.name}' (type: '{candidate.GetType().Name}').\nEnable/activate it or remove it from the scene.");
-                    return null;
+                        return null;
                     }
 
                     candidate.InitializeForCurrentPlaySessionIfNeeded();

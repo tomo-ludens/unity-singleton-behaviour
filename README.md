@@ -1,4 +1,4 @@
-# Policy-Driven Unity Singleton (v3.0.4)
+# Policy-Driven Unity Singleton (v3.0.5)
 
 [Japanese README](./README.ja.md)
 
@@ -75,27 +75,28 @@ They share the same core logic, while a **policy** controls the lifecycle behavi
 
 ```text
 Singletons/
-├── Singletons.asmdef                 # Assembly Definition
-├── AssemblyInfo.cs                   # InternalsVisibleTo for tests
-├── GlobalSingleton.cs                # Public API (persistent + auto-create)
-├── SceneSingleton.cs                 # Public API (scene-scoped + no auto-create)
+├── Singletons.asmdef                       # Assembly Definition
+├── AssemblyInfo.cs                         # InternalsVisibleTo (for tests)
+├── GlobalSingleton.cs                      # Public API (persistent + auto-create)
+├── SceneSingleton.cs                       # Public API (scene-scoped + no auto-create)
 ├── Core/
-│   ├── SingletonBehaviour.cs         # Core implementation
-│   ├── SingletonRuntime.cs           # Internal runtime (Domain Reload handling)
-│   ├── SingletonLogger.cs            # Conditional logger (stripped in release)
+│   ├── SingletonBehaviour.cs               # Core implementation
+│   ├── SingletonRuntime.cs                 # Internal runtime (Domain Reload handling)
+│   ├── SingletonLogger.cs                  # Conditional logger (stripped in release)
 │   └── Editor/
-│       └── SingletonEditorHooks.cs   # Editor event hooks (Play Mode state)
+│       └── SingletonEditorHooks.cs         # Editor event hooks (Play Mode state)
 ├── Policy/
-│   ├── ISingletonPolicy.cs           # Policy interface
-│   ├── PersistentPolicy.cs           # Persistent policy implementation
-│   └── SceneScopedPolicy.cs          # Scene-scoped policy implementation
-└── Tests/                            # PlayMode & EditMode tests
-    ├── Runtime/
-    │   ├── Singletons.Tests.asmdef
-    │   └── SingletonTests.cs
-    └── Editor/
-        ├── Singletons.Editor.Tests.asmdef
-        └── EditModeTests.cs
+│   ├── ISingletonPolicy.cs                 # Policy interface
+│   ├── PersistentPolicy.cs                 # Persistent policy implementation
+│   └── SceneScopedPolicy.cs                # Scene-scoped policy implementation
+└── Tests/                                  # PlayMode & EditMode tests
+    ├── TestExtensions.cs                   # Test helpers
+    ├── Editor/
+    │   ├── Singletons.Editor.Tests.asmdef  # Editor test assembly
+    │   └── EditModeTests.cs                # EditMode tests
+    └── Runtime/
+        ├── Singletons.Tests.asmdef         # Runtime test assembly
+        └── SingletonTests.cs               # PlayMode tests
 ```
 
 ## Dependencies (Assumed Unity API Behavior)
