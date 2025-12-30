@@ -105,7 +105,7 @@ namespace Singletons.Core
             IsQuitting = false;
         }
 
-        private static void OnQuitting() => IsQuitting = true;
+        private static void OnQuitting() => NotifyQuitting();
 
         private static bool TryLazyCaptureMainThreadId(string callerContext)
         {

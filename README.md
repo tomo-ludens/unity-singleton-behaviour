@@ -1,4 +1,4 @@
-# Policy-Driven Unity Singleton (v3.0.3)
+# Policy-Driven Unity Singleton (v3.0.4)
 
 [Japanese README](./README.ja.md)
 
@@ -409,7 +409,7 @@ This is **intended behavior** for this singleton design, so align your team on o
 
 ### Included Tests
 
-This package includes comprehensive PlayMode and EditMode tests with **73 total tests** (53 PlayMode + 20 EditMode), all passing.
+This package includes comprehensive PlayMode and EditMode tests with **74 total tests** (53 PlayMode + 21 EditMode), all passing.
 
 #### PlayMode Tests (53 tests)
 
@@ -431,7 +431,7 @@ This package includes comprehensive PlayMode and EditMode tests with **73 total 
 | BaseAwakeEnforcement | 1 | base.Awake() call detection |
 | EdgeCase | 3 | Destroyed instance cleanup, rapid access, placement timing |
 
-#### EditMode Tests (20 tests)
+#### EditMode Tests (21 tests)
 
 | Category | Tests | Coverage |
 |----------|-------|----------|
@@ -440,7 +440,7 @@ This package includes comprehensive PlayMode and EditMode tests with **73 total 
 | SingletonBehaviourEditMode | 5 | EditMode behavior, caching isolation |
 | SingletonLifecycleEditMode | 3 | Parent hierarchy, creation, coexistence in Edit Mode |
 | SingletonRuntimeStateEditMode | 2 | NotifyQuitting, PlaySessionId consistency |
-| SingletonLoggerEditMode | 3 | LogWarning, LogError, ThrowInvalidOperation APIs |
+| SingletonLoggerEditMode | 4 | Log, LogWarning, LogError, ThrowInvalidOperation APIs |
 
 ### Running Tests
 
@@ -522,13 +522,24 @@ Initialization is deferred and occurs on the first `Instance` / `TryGetInstance`
 **Q. What happens if I forget to place a SceneSingleton in the scene?**
 DEV/EDITOR throws an exception; Player builds return `null` / `false`. GlobalSingleton auto-creates if not found.
 
+### Built-in Debug Logging
+
+The library outputs debug logs in `UNITY_EDITOR` and `DEVELOPMENT_BUILD` only (stripped in release builds):
+
+| Level | Message | Trigger |
+|-------|---------|--------|
+| **Log** | `OnPlaySessionStart invoked.` | When a singleton's per-session initialization runs |
+| **Log** | `Instance access blocked: application is quitting.` | When `Instance` returns null due to quitting |
+| **Log** | `TryGetInstance blocked: application is quitting.` | When `TryGetInstance` returns false due to quitting |
+| **Warning** | `Auto-created.` | When a GlobalSingleton is auto-created |
+| **Warning** | `Duplicate detected.` | When a duplicate singleton is destroyed |
+| **Warning** | `Reparented to root for DontDestroyOnLoad.` | When a persistent singleton under a parent is reparented |
+| **Error** | `base.Awake() was not called` | When a subclass forgets to call `base.Awake()` |
+| **Error** | `Type mismatch` | When a derived class is found instead of exact type |
+
 ### Debugging Tips
 
 ```csharp
-// Enable detailed logging (DEV/EDITOR only)
-#define DEVELOPMENT_BUILD
-#define UNITY_EDITOR
-
 // Check singleton state
 if (MySingleton.TryGetInstance(out var instance))
 {

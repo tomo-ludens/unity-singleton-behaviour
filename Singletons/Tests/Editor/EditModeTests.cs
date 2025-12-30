@@ -320,10 +320,23 @@ namespace Singletons.Tests.Editor
     public class SingletonLoggerEditModeTests
     {
         [Test]
+        public void Log_WithTypeParameter_FormatsCorrectly()
+        {
+            // Expect the log to avoid test failure
+            LogAssert.Expect(type: LogType.Log, message: "[Singletons.Tests.Editor.TestPersistentSingletonForEditMode] Test info message");
+
+            Assert.DoesNotThrow(() =>
+            {
+                SingletonLogger.Log<TestPersistentSingletonForEditMode>(message: "Test info message");
+            });
+        }
+
+        [Test]
         public void LogWarning_WithTypeParameter_FormatsCorrectly()
         {
-            // This test verifies that the logger can be called without exceptions
-            // Actual log output verification would require LogAssert in PlayMode
+            // Expect the warning log to avoid test failure
+            LogAssert.Expect(type: LogType.Warning, message: "[Singletons.Tests.Editor.TestPersistentSingletonForEditMode] Test warning message");
+
             Assert.DoesNotThrow(() =>
             {
                 SingletonLogger.LogWarning<TestPersistentSingletonForEditMode>(message: "Test warning message");
