@@ -52,7 +52,11 @@ namespace Singletons.Core
 
                 InvalidateInstanceCacheIfPlaySessionChanged();
 
-                if (SingletonRuntime.IsQuitting) return null;
+                if (SingletonRuntime.IsQuitting)
+                {
+                    SingletonLogger.Log<T>(message: "Instance access blocked: application is quitting.");
+                    return null;
+                }
                 if (HasCachedInstance) return _instance;
 
                 var candidate = FindAnyObjectByType<T>(findObjectsInactive: FindInactivePolicy);
@@ -108,6 +112,7 @@ namespace Singletons.Core
 
             if (SingletonRuntime.IsQuitting)
             {
+                SingletonLogger.Log<T>(message: "TryGetInstance blocked: application is quitting.");
                 instance = null;
                 return false;
             }
@@ -262,6 +267,7 @@ namespace Singletons.Core
 
             this.EnsurePersistent();
             this._initializedPlaySessionId = currentPlaySessionId;
+            SingletonLogger.Log<T>(message: "OnPlaySessionStart invoked.", context: this);
             this.OnPlaySessionStart();
         }
 

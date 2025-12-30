@@ -18,6 +18,15 @@ namespace Singletons.Core
         private const string DevBuildSymbol = "DEVELOPMENT_BUILD";
 
         /// <summary>
+        /// Logs an info message with automatic type tag resolution. Stripped in release builds.
+        /// </summary>
+        [Conditional(conditionString: EditorSymbol), Conditional(conditionString: DevBuildSymbol)]
+        public static void Log<T>(string message, UnityEngine.Object context = null)
+        {
+            Debug.Log(message: $"[{typeof(T).FullName}] {message}", context: context);
+        }
+
+        /// <summary>
         /// Logs a warning for infrastructure components. Stripped in release builds.
         /// </summary>
         [Conditional(conditionString: EditorSymbol), Conditional(conditionString: DevBuildSymbol)]

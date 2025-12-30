@@ -1,4 +1,4 @@
-# ポリシー駆動型Unityシングルトン（v3.0.3）
+# ポリシー駆動型Unityシングルトン（v3.0.4）
 
 [English README](./README.md)
 
@@ -409,7 +409,7 @@ Edit Mode（`Application.isPlaying == false`）では、次の挙動に固定し
 
 ### 同梱テスト
 
-本パッケージには包括的な PlayMode および EditMode テストが含まれ、**73個の総テスト**（PlayMode 53個 + EditMode 20個）すべて成功しています。
+本パッケージには包括的な PlayMode および EditMode テストが含まれ、**74個の総テスト**（PlayMode 53個 + EditMode 21個）すべて成功しています。
 
 #### PlayMode テスト（53個）
 
@@ -431,7 +431,7 @@ Edit Mode（`Application.isPlaying == false`）では、次の挙動に固定し
 | BaseAwakeEnforcement | 1 | base.Awake() 呼び出し検出 |
 | EdgeCase | 3 | 破棄インスタンスクリーンアップ、高速アクセス、配置タイミング |
 
-#### EditMode テスト（20個）
+#### EditMode テスト（21個）
 
 | カテゴリ | テスト数 | カバレッジ |
 |---------|---------|----------|
@@ -440,7 +440,7 @@ Edit Mode（`Application.isPlaying == false`）では、次の挙動に固定し
 | SingletonBehaviourEditMode | 5 | EditMode 挙動、キャッシュ分離 |
 | SingletonLifecycleEditMode | 3 | 親階層、生成、Edit Modeでの共存 |
 | SingletonRuntimeStateEditMode | 2 | NotifyQuitting、PlaySessionId一貫性 |
-| SingletonLoggerEditMode | 3 | LogWarning、LogError、ThrowInvalidOperation API |
+| SingletonLoggerEditMode | 4 | Log、LogWarning、LogError、ThrowInvalidOperation API |
 
 ### テストの実行
 
@@ -522,13 +522,24 @@ DEV/EDITORでのfail-fast動作によるものです。SceneSingletonがシー�
 **Q. SceneSingletonをシーンに置き忘れたらどうなりますか？**
 DEV/EDITORでは例外、Playerでは`null`/`false`を返します。GlobalSingletonは見つからなければ自動生成されます。
 
+### 組み込みデバッグログ
+
+本ライブラリは `UNITY_EDITOR` および `DEVELOPMENT_BUILD` でのみデバッグログを出力します（リリースビルドではストリップ）：
+
+| レベル | メッセージ | トリガー |
+|--------|---------|--------|
+| **Log** | `OnPlaySessionStart invoked.` | シングルトンのセッションごとの初期化実行時 |
+| **Log** | `Instance access blocked: application is quitting.` | 終了中に `Instance` が null を返す時 |
+| **Log** | `TryGetInstance blocked: application is quitting.` | 終了中に `TryGetInstance` が false を返す時 |
+| **Warning** | `Auto-created.` | GlobalSingleton が自動生成された時 |
+| **Warning** | `Duplicate detected.` | 重複シングルトンが破棄された時 |
+| **Warning** | `Reparented to root for DontDestroyOnLoad.` | 親オブジェクト下の永続シングルトンがルートに再配置された時 |
+| **Error** | `base.Awake() was not called` | サブクラスが `base.Awake()` を呼び忘れた時 |
+| **Error** | `Type mismatch` | 正確な型ではなく派生クラスが見つかった時 |
+
 ### デバッグヒント
 
 ```csharp
-// 詳細ログを有効化（DEV/EDITORのみ）
-#define DEVELOPMENT_BUILD
-#define UNITY_EDITOR
-
 // シングルトン状態を確認
 if (MySingleton.TryGetInstance(out var instance))
 {
