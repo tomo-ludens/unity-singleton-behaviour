@@ -1,7 +1,7 @@
 {
     "name": "com.tomoludens.policy-singleton",
     "displayName": "Policy-Driven Singleton",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "unity": "2022.3",
     "description": "Policy-driven singleton base classes for MonoBehaviour (Global/Scene) with Domain Reload disabled support.",
     "keywords": [
