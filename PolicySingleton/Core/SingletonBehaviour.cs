@@ -220,7 +220,7 @@ namespace TomoLudens.PolicySingleton.Core
 
             if (Application.isPlaying)
             {
-                Destroy(obj: candidate.gameObject);
+                DeactivateAndDestroy(go: candidate.gameObject);
             }
 
             return null;
@@ -253,6 +253,19 @@ namespace TomoLudens.PolicySingleton.Core
             _instance = null;
         }
 
+        private static void DeactivateAndDestroy(GameObject go)
+        {
+            if (!Application.isPlaying) return;
+            if (go == null) return;
+
+            if (go.activeSelf)
+            {
+                go.SetActive(value: false);
+            }
+
+            Destroy(obj: go);
+        }
+
         private void InitializeForCurrentPlaySessionIfNeeded()
         {
             InvalidateInstanceCacheIfPlaySessionChanged();
@@ -281,14 +294,14 @@ namespace TomoLudens.PolicySingleton.Core
                 if (ReferenceEquals(objA: _instance, objB: this)) return true;
 
                 SingletonLogger.LogWarning<T>(message: $"Duplicate detected. Existing='{_instance.name}', destroying '{this.name}'.", context: this);
-                Destroy(obj: this.gameObject);
+                DeactivateAndDestroy(go: this.gameObject);
                 return false;
             }
 
             if (this.GetType() != typeof(T))
             {
                 SingletonLogger.LogError<T>(message: $"Type mismatch. Expected='{typeof(T).Name}', Actual='{this.GetType().Name}', destroying '{this.name}'.", context: this);
-                Destroy(obj: this.gameObject);
+                DeactivateAndDestroy(go: this.gameObject);
                 return false;
             }
 
