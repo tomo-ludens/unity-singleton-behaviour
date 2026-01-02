@@ -1,4 +1,4 @@
-# Policy-Driven Unity Singleton (v1.0.0)
+# Policy-Driven Unity Singleton (v1.0.1)
 
 [Japanese README](./README.ja.md)
 
@@ -70,15 +70,17 @@ They share the same core logic, while a **policy** controls the lifecycle behavi
   * **Edit Mode**: Performs *lookup only* in the editor, and does not create instances or mutate static caches (no side effects).
   * **Reinitialization (Soft Reset)**: Performs state reset at the **Play-session boundary** and reinitializes every Play session (aligned with the `PlaySessionId` strategy).
 * **Strict type checks**: Rejects references where the generic type `T` does not exactly match the concrete runtime type, preventing misuse.
-* **Development safety (DEV/EDITOR)**:
+* **Development safety (DEV/EDITOR/ASSERTIONS)**:
+  * **Fail-fast scope**: Fail-fast guards run in the Editor and Development builds, and can also run in Player builds when assertions are enabled (e.g., via `BuildOptions.ForceEnableAssertions` / `UNITY_ASSERTIONS`).
 
 Notes on quitting (important):
 - Unity's quit / Play Mode exit event order can vary by Unity version and environment (Editor vs Player).
 - This library does **not** attempt to fully control the shutdown sequence; it uses `IsQuitting` as a **best-effort guard** to suppress singleton access and avoid resurrection during shutdown.
-
-  * `FindAnyObjectByType(...Exclude)` does **not** consider inactive objects, so an inactive singleton can be treated as "missing" → auto-created → silently duplicated. To prevent this, DEV/EDITOR uses **fail-fast** (throws) when an inactive singleton is detected.
-  * Accessing a SceneSingleton that was not placed in the scene also uses **fail-fast** (throws) in DEV/EDITOR.
-* **Release build optimization**: Logs and validation checks are stripped; on error the API returns `null` / `false` (callers must handle this).
+- `FindAnyObjectByType(...Exclude)` does **not** consider inactive objects, so an inactive singleton can be treated as "missing" → auto-created → silently duplicated. To prevent this, DEV/EDITOR/ASSERTIONS can use **fail-fast** (throws) when an inactive singleton is detected.
+- Accessing a SceneSingleton that was not placed in the scene also uses **fail-fast** (throws) in DEV/EDITOR/ASSERTIONS.
+- **Player build optimization**: Logs and most validation calls are stripped via `[Conditional]`.
+  - If assertions are enabled in a Player build (e.g., `BuildOptions.ForceEnableAssertions` / `UNITY_ASSERTIONS`), some development guards can remain active.
+  - When validations are stripped, the API fails-soft and returns `null` / `false` on failure (callers must handle this).
 
 ## Architecture
 
@@ -112,8 +114,8 @@ Notes on quitting (important):
 │ SingletonRuntime│  │ ISingletonPolicy│  │    SingletonLogger      │
 │ • PlaySessionId │  │ • PersistAcross │  │ • Log/Warn/Error        │
 │ • IsQuitting    │  │   Scenes        │  │ • Conditional compile   │
-│ • Thread check  │  │ • AutoCreateIf  │  │ • Stripped in release   │
-│                 │  │   Missing       │  │                         │
+│ • Thread check  │  │ • AutoCreateIf  │  │ • Stripped in Player    │
+│                 │  │   Missing       │  │   builds                │
 └────────┬────────┘  └─────────────────┘  └─────────────────────────┘
          │ editor hooks
          ▼
@@ -121,11 +123,11 @@ Notes on quitting (important):
 │SingletonEditorHooks │
 │ (Play Mode events)  │
 └─────────────────────┘
-```
+````
 
- Notes:
- - **Editor hooks direction**: `SingletonEditorHooks` (Editor-only) calls `SingletonRuntime.NotifyQuitting()`; runtime code does not depend on Editor hooks.
-- **Namespaces/assemblies**: `SingletonEditorHooks` exists under `TomoLudens.PolicySingleton.Editor` and is compiled only in the Editor.
+Notes:
+* **Editor hooks direction**: `SingletonEditorHooks` (Editor-only) calls `SingletonRuntime.NotifyQuitting()`; runtime code does not depend on Editor hooks.
+* **Namespaces/assemblies**: `SingletonEditorHooks` exists under `TomoLudens.PolicySingleton.Editor` and is compiled only in the Editor.
 
 ### Policy Comparison
 
@@ -150,23 +152,24 @@ classDiagram
     ISingletonPolicy <|.. SceneScopedPolicy
 ```
 
- Notes:
- - Policies are implemented as `readonly struct` with constant getters (values are effectively compile-time constants).
+Notes:
+
+* Policies are implemented as `readonly struct` with constant getters (values are effectively compile-time constants).
 
 ### Domain Reload Disabled: Play Session Boundary
 
 ```text
  Play Session 1                          Play Session 2
-─────────────────────────────────────────────────────────────────────────▶
-                                                                    time
+───────────────────────────────────────────────────────────────────────────────▶
+                                                                          time
     ┌─────────────────────┐              ┌─────────────────────┐
     │  PlaySessionId: 1   │              │  PlaySessionId: 2   │
     └─────────────────────┘              └─────────────────────┘
-              │                                  │
-    ┌─────────▼─────────┐              ┌─────────▼─────────┐
-    │ Static cache OK   │              │ Static cache OK   │
-    │ Instance: 0xABC   │   ───────▶   │ Instance: 0xABC   │ (same object)
-    └───────────────────┘   Invalidate └───────────────────┘
+              │                                      │
+    ┌──────────▼────────┐                ┌───────────▼─────────┐
+    │  Static cache OK  │                │   Static cache OK   │
+    │  Instance: 0xABC  │   ─────────▶   │   Instance: 0xABC   │ (same object)
+    └───────────────────┘   Invalidate   └─────────────────────┘
                             & Refresh
                                  │
                     ┌────────────▼────────────┐
@@ -176,8 +179,8 @@ classDiagram
                     └─────────────────────────┘
 ```
 
- Notes:
- - The static cache (`_instance`) is cleared when `PlaySessionId` changes, even if the underlying scene object still exists.
+Notes:
+* The static cache (`_instance`) is cleared when `PlaySessionId` changes, even if the underlying scene object still exists.
 
 ## Directory Structure
 
@@ -186,7 +189,7 @@ PolicySingleton/
 ├── Core/
 │   ├── AssemblyInfo.cs                                     # InternalsVisibleTo (for tests)
 │   ├── SingletonBehaviour.cs                               # Core implementation
-│   ├── SingletonLogger.cs                                  # Conditional logger (stripped in release)
+│   ├── SingletonLogger.cs                                  # Conditional logger (stripped in Player builds)
 │   └── SingletonRuntime.cs                                 # Internal runtime (Domain Reload handling)
 ├── Editor/
 │   ├── SingletonEditorHooks.cs                             # Editor event hooks (Play Mode state)
@@ -212,12 +215,14 @@ PolicySingleton/
 
 This implementation assumes the following Unity behaviors. If Unity changes these behaviors, the design assumptions may need revisiting.
 
-| API / Feature | Assumed Behavior |
-| --- | --- |
-| Domain Reload disabled | **Static variables** and **static event subscriptions** persist across Play sessions. The library invalidates caches using `PlaySessionId`. |
-| Scene Reload disabled | When Scene Reload is disabled, scenes are not reloaded. The library **does not** assume the same callback order as a fresh app launch (new-load semantics). State reset is aligned to the Play-session boundary via `PlaySessionId`. |
-| `Object.FindAnyObjectByType<T>(FindObjectsInactive.Exclude)` | By default, **inactive objects are excluded**. Therefore an inactive singleton can be treated as "not found," which drives the DEV/EDITOR fail-fast policy. |
-| `Object.DontDestroyOnLoad` | Must be applied to a **root GameObject** (therefore Persistent singletons may reparent to root when needed). |
+| API / Feature                                                | Assumed Behavior                                                                                                                                                                                                                     |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Domain Reload disabled                                       | **Static variables** and **static event subscriptions** persist across Play sessions. The library invalidates caches using `PlaySessionId`.                                                                                          |
+| Scene Reload disabled                                        | When Scene Reload is disabled, scenes are not reloaded. The library **does not** assume the same callback order as a fresh app launch (new-load semantics). State reset is aligned to the Play-session boundary via `PlaySessionId`. |
+| `Object.FindAnyObjectByType<T>(FindObjectsInactive.Exclude)` | By default, inactive objects are excluded. Also, the object returned by `FindAnyObjectByType` is **not guaranteed to be the same between calls** (non-deterministic selection).                                                      |
+| `FindObjectsInactive`                                        | Find APIs can be configured to include or exclude inactive objects; default is exclusion in most find methods.                                                                                                                       |
+| `Object.DontDestroyOnLoad`                                   | Must be applied to a **root GameObject** (therefore Persistent singletons may reparent to root when needed).                                                                                                                         |
+| `Object.Destroy`                                             | Actual destruction is delayed until after the current Update loop (but before rendering).                                                                                                                                            |
 
 ## Installation
 
@@ -284,15 +289,15 @@ public sealed class GameManager : GlobalSingleton<GameManager>
 
 `OnPlaySessionStart` is especially important when **Domain Reload is disabled**:
 
-| Method | Called When | Purpose |
-|--------|-------------|---------|
-| `Awake()` | Only on first Play Mode start | Persistent initialization (resource loading, static settings) |
-| `OnPlaySessionStart()` | **Every play session** | Session-specific initialization (temporary data, event subscriptions) |
+| Method                 | Called When                   | Purpose                                                               |
+| ---------------------- | ----------------------------- | --------------------------------------------------------------------- |
+| `Awake()`              | Only on first Play Mode start | Persistent initialization (resource loading, static settings)         |
+| `OnPlaySessionStart()` | **Every play session**        | Session-specific initialization (temporary data, event subscriptions) |
 
 **Why is it needed?**
-- When Domain Reload is disabled, static fields persist between play sessions
-- Event subscriptions and temporary data might remain from the previous session
-- `OnPlaySessionStart` ensures a clean state for each session
+* When Domain Reload is disabled, static fields persist between play sessions
+* Event subscriptions and temporary data might remain from the previous session
+* `OnPlaySessionStart` ensures a clean state for each session
 
 ### 2. SceneSingleton
 
@@ -311,17 +316,17 @@ public sealed class LevelController : SceneSingleton<LevelController>
 }
 
 // ⚠️ Must be placed in the scene.
-// If you forget to place it: DEV/EDITOR throws; release builds return null.
+// If you forget to place it: DEV/EDITOR/ASSERTIONS throws; otherwise Player builds return null.
 // LevelController.Instance.DoSomething();
 ```
 
 ### 3. Choosing Between `Instance` and `TryGetInstance` (Typical Patterns)
 
-In release builds, DEV/EDITOR-only validations are stripped and the API returns `null` / `false` on errors. The key for effective usage is making clear **when to use `Instance` and when to use `TryGetInstance`**.
+In Player builds, most DEV/EDITOR validations are stripped via `ConditionalAttribute`. If assertions are enabled (`UNITY_ASSERTIONS`), some fail-fast guards may remain active.
 
-| Choice | Rule of Thumb | Examples |
-| --- | --- | --- |
-| **`Instance`** | Use when the feature is **required**, and a missing instance is not acceptable. | Essential managers during **startup/initialization** (`GameManager`, `AudioManager`, etc.) |
+| Choice               | Rule of Thumb                                                                                                                      | Examples                                                                                        |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| **`Instance`**       | Use when the feature is **required**, and a missing instance is not acceptable.                                                    | Essential managers during **startup/initialization** (`GameManager`, `AudioManager`, etc.)      |
 | **`TryGetInstance`** | Use when "if it exists, use it; otherwise do nothing" is correct.<br>Avoid unintended creation/resurrection and ordering coupling. | **Cleanup / unregister / pause** flows (`OnDisable` / `OnDestroy` / `OnApplicationPause`, etc.) |
 
 #### Typical: Use TryGetInstance for cleanup/unregister paths
@@ -364,7 +369,7 @@ private void Awake()
 
 private void Update()
 {
-    if (_gm == null) return; // defensive guard since release builds may return null
+    if (_gm == null) return; // defensive guard since Player builds may return null
     // ...
 }
 ```
@@ -395,25 +400,25 @@ public class Player : MonoBehaviour
 
 ### `static T Instance { get; }`
 
-| State | Behavior |
-| --- | --- |
-| **Playing (normal)** | Returns the cached instance if established. Otherwise searches, and Persistent may auto-create if needed. |
-| **During quitting** | Always returns `null`. |
-| **Edit Mode** | Lookup only (no creation, and no static cache mutation). |
-| **Inactive detected** | Throws in DEV/EDITOR; returns `null` in Player builds. |
-| **Type mismatch** | Rejects and returns `null` for references with mismatched types such as derived types (destroys it during Play Mode). |
-| **Scene missing** | If a SceneSingleton is not found: throws in DEV/EDITOR; returns `null` in Player builds. |
+| State                 | Behavior                                                                                                                                                                                                                                                                                        |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Playing (normal)**  | Returns the cached instance if established. Otherwise searches, and Persistent may auto-create if needed.                                                                                                                                                                                       |
+| **During quitting**   | Always returns `null`.                                                                                                                                                                                                                                                                          |
+| **Edit Mode**         | Lookup only (no creation, and no static cache mutation).                                                                                                                                                                                                                                        |
+| **Inactive detected** | Throws in DEV/EDITOR/ASSERTIONS; returns `null` in Player builds when guards are stripped.                                                                                                                                                                                                      |
+| **Type mismatch**     | Rejects references whose runtime type doesn’t exactly match `T` (e.g., derived types).<br>In Play Mode, the library may deactivate the GameObject before destroying it to avoid same-frame re-detection because `Destroy` is deferred and `FindAnyObjectByType` selection is non-deterministic. |
+| **Scene missing**     | If a SceneSingleton is not found: throws in DEV/EDITOR/ASSERTIONS; returns `null` in Player builds when guards are stripped.                                                                                                                                                                    |
 
 ### `static bool TryGetInstance(out T instance)`
 
 Returns the instance if present. **Does not auto-create**.
 
-| State | Behavior |
-| --- | --- |
-| **Present** | Returns `true` and a valid reference. |
-| **Not present** | Returns `false` and `null`. |
-| **During quitting** | Always returns `false`. |
-| **Edit Mode** | Lookup only (does not cache). |
+| State               | Behavior                              |
+| ------------------- | ------------------------------------- |
+| **Present**         | Returns `true` and a valid reference. |
+| **Not present**     | Returns `false` and `null`.           |
+| **During quitting** | Always returns `false`.               |
+| **Edit Mode**       | Lookup only (does not cache).         |
 
 ## Design Intent (Notes)
 
@@ -440,14 +445,14 @@ Additionally, Unity has a known issue where `RuntimeInitializeOnLoadMethod` on a
 
 ### 0. Intentional Constraints (Design Contract)
 
-This library intentionally enforces constraints to reduce hard-to-debug Unity issues (hidden duplicates, resurrection during quit, and ordering coupling). In DEV/EDITOR builds, some of these become fail-fast exceptions.
+This library intentionally enforces constraints to reduce hard-to-debug Unity issues (hidden duplicates, resurrection during quit, and ordering coupling). In DEV/EDITOR builds (and assertions-enabled Player builds), some of these become fail-fast exceptions.
 
 * **Main thread only (Play Mode)**: `Instance` / `TryGetInstance` must be called from the main thread.
 * **Exact type required**: A reference where the runtime type does not exactly match `T` is rejected (e.g., a derived type is not accepted).
-* **Avoid inactive/disabled instances**: Inactive/disabled components can be treated as "missing" by Unity find APIs; DEV/EDITOR throws to prevent hidden duplication.
-* **SceneSingleton must be placed**: Scene-scoped singletons are never auto-created; forgetting placement throws in DEV/EDITOR and returns `null` in Player builds.
+* **Avoid inactive/disabled instances**: Inactive/disabled components can be treated as "missing" by Unity find APIs; DEV/EDITOR/ASSERTIONS can throw to prevent hidden duplication.
+* **SceneSingleton must be placed**: Scene-scoped singletons are never auto-created; forgetting placement throws in DEV/EDITOR/ASSERTIONS and returns `null` / `false` when guards are stripped in Player builds.
 * **During quitting**: Singleton access is suppressed (`null` / `false`) as a best-effort guard against resurrection.
-* **Release builds may return null/false**: DEV/EDITOR-only exceptions and logs are stripped by design; callers must handle `null` / `false`.
+* **Player builds may return null/false (and may still throw if assertions-enabled guards are active)**: DEV/EDITOR-only exceptions and logs are stripped by design; callers must handle `null` / `false`.
 
 ### 1. Seal concrete classes
 
@@ -457,6 +462,11 @@ Inheritance like `class Derived : GameManager` is rejected at runtime by the typ
 ### 2. If you override Unity messages, base calls are required
 
 If you override `Awake`, `OnEnable`, or `OnDestroy`, you must call the base method.
+
+Notes on enforcement (what the library can/cannot detect automatically):
+
+* Missing `base.Awake()` is detected and logged from the base `OnEnable()` path (when it runs).
+* Missing `base.OnEnable()` / `base.OnDestroy()` is not reliably detectable, but skipping them can break initialization/cleanup behavior.
 
 ```csharp
 protected override void Awake()
@@ -473,6 +483,7 @@ Even if you forget, there is a safety net that initializes on the first `Instanc
 * **Do not place duplicates**: Do not place the same singleton in multiple scenes (the later-loaded one will be destroyed).
 * **Persistent expects root placement**: If attached under a child, it will reparent to root and persist; DEV/EDITOR emits a warning.
 * **Do not keep it disabled**: Avoid leaving singleton components Disabled; they can be treated as "missing" and lead to hidden duplication.
+* **Use a dedicated GameObject**: In Play Mode, this library may destroy the entire GameObject when it detects duplicates or type mismatches. Avoid attaching unrelated components to the same GameObject.
 
 ## Advanced Topics
 
@@ -513,7 +524,7 @@ In Edit Mode (`Application.isPlaying == false`), behavior is fixed:
 * **Static caches are not updated** (no side effects).
 * Therefore, references from custom inspectors or editor tooling do not affect Play Mode state.
 
-> Note: `FindAnyObjectByType<T>(FindObjectsInactive.Exclude)` excludes inactive objects by default. Because an inactive singleton can be treated as "not found," DEV/EDITOR chooses fail-fast.
+> Note: `FindAnyObjectByType<T>(FindObjectsInactive.Exclude)` excludes inactive objects by default. Because an inactive singleton can be treated as "not found," DEV/EDITOR/ASSERTIONS can choose fail-fast.
 
 ## IDE Configuration (Rider / ReSharper)
 
@@ -534,34 +545,34 @@ This package includes comprehensive PlayMode and EditMode tests with **74 total 
 
 #### PlayMode Tests (53 tests)
 
-| Category | Tests | Coverage |
-|----------|-------|----------|
-| GlobalSingleton | 7 | Auto-creation, caching, duplicate detection |
-| SceneSingleton | 5 | Placement, no auto-create, duplicate detection |
-| InactiveInstance | 3 | Inactive GO detection, disabled component |
-| TypeMismatch | 2 | Derived class rejection |
-| ThreadSafety | 7 | Background thread protection, main thread validation |
-| Lifecycle | 2 | Destruction, recreation |
-| SoftReset | 1 | Per-Play reinitialization on PlaySessionId boundary |
-| SceneSingletonEdgeCase | 2 | Not placed, no auto-create |
-| PracticalUsage | 6 | GameManager, LevelController, state management |
-| PolicyBehavior | 3 | Policy-driven behavior validation |
-| ResourceManagement | 3 | Instance lifecycle and cleanup |
-| DomainReload | 6 | PlaySessionId boundary, cache invalidation, quitting state |
-| ParentHierarchy | 2 | Root reparenting for DontDestroyOnLoad |
-| BaseAwakeEnforcement | 1 | base.Awake() call detection |
-| EdgeCase | 3 | Destroyed instance cleanup, rapid access, placement timing |
+| Category               | Tests | Coverage                                                   |
+| ---------------------- | ----- | ---------------------------------------------------------- |
+| GlobalSingleton        | 7     | Auto-creation, caching, duplicate detection                |
+| SceneSingleton         | 5     | Placement, no auto-create, duplicate detection             |
+| InactiveInstance       | 3     | Inactive GameObject detection, disabled component          |
+| TypeMismatch           | 2     | Derived class rejection                                    |
+| ThreadSafety           | 7     | Background thread protection, main thread validation       |
+| Lifecycle              | 2     | Destruction, recreation                                    |
+| SoftReset              | 1     | Per-Play reinitialization on PlaySessionId boundary        |
+| SceneSingletonEdgeCase | 2     | Not placed, no auto-create                                 |
+| PracticalUsage         | 6     | GameManager, LevelController, state management             |
+| PolicyBehavior         | 3     | Policy-driven behavior validation                          |
+| ResourceManagement     | 3     | Instance lifecycle and cleanup                             |
+| DomainReload           | 6     | PlaySessionId boundary, cache invalidation, quitting state |
+| ParentHierarchy        | 2     | Root reparenting for DontDestroyOnLoad                     |
+| BaseAwakeEnforcement   | 1     | base.Awake() call detection                                |
+| EdgeCase               | 3     | Destroyed instance cleanup, rapid access, placement timing |
 
 #### EditMode Tests (21 tests)
 
-| Category | Tests | Coverage |
-|----------|-------|----------|
-| SingletonRuntimeEditMode | 2 | PlaySessionId, IsQuitting validation |
-| Policy | 5 | Policy struct validation, immutability, interface compliance |
-| SingletonBehaviourEditMode | 5 | EditMode behavior, caching isolation |
-| SingletonLifecycleEditMode | 3 | Parent hierarchy, creation, coexistence in Edit Mode |
-| SingletonRuntimeStateEditMode | 2 | NotifyQuitting, PlaySessionId consistency |
-| SingletonLoggerEditMode | 4 | Log, LogWarning, LogError, ThrowInvalidOperation APIs |
+| Category                      | Tests | Coverage                                                     |
+| ----------------------------- | ----- | ------------------------------------------------------------ |
+| SingletonRuntimeEditMode      | 2     | PlaySessionId, IsQuitting validation                         |
+| Policy                        | 5     | Policy struct validation, immutability, interface compliance |
+| SingletonBehaviourEditMode    | 5     | EditMode behavior, caching isolation                         |
+| SingletonLifecycleEditMode    | 3     | Parent hierarchy, creation, coexistence in Edit Mode         |
+| SingletonRuntimeStateEditMode | 2     | NotifyQuitting, PlaySessionId consistency                    |
+| SingletonLoggerEditMode       | 4     | Log, LogWarning, LogError, ThrowInvalidOperation APIs        |
 
 ### Running Tests
 
@@ -610,15 +621,19 @@ public void TearDown()
 ## Known Limitations
 
 ### Static Constructor Timing
+
 If a singleton class has a static constructor, it may execute before `PlaySessionId` is initialized. This can rarely cause unexpected behavior.
 
 ### Thread Safety
+
 All singleton operations must be called from the main thread. Access from background threads returns `null` / `false` instead of throwing exceptions, ensuring stable behavior across Unity versions.
 
 ### Scene Loading Order
+
 If multiple scenes contain the same singleton type, the destruction order depends on Unity's scene loading sequence.
 
 ### Memory Leaks
+
 If static event subscriptions are not properly cleaned up in `OnDestroy`, memory leaks can occur when Domain Reload is disabled.
 
 ## Troubleshooting
@@ -631,8 +646,8 @@ Check that the component is active and enabled, and that you're calling from the
 **Q. Getting duplicate singleton warnings**
 The same singleton may be placed in multiple scenes. Check scenes and prefabs, and remove duplicate instances.
 
-**Q. Exceptions only occur in Editor**
-This is due to DEV/EDITOR fail-fast behavior. Verify that SceneSingleton is placed in the scene. Use `TryGetInstance()` for conditional access.
+**Q. Exceptions occur in the Editor / Development builds (or in assertions-enabled Player builds)**
+This is due to fail-fast behavior in DEV/EDITOR/ASSERTIONS. Verify that SceneSingleton is placed in the scene. Use `TryGetInstance()` for conditional access.
 
 **Q. Can I call `Instance` every frame?**
 It works, but it is not recommended. Cache it in `Start` / `Awake`.
@@ -641,22 +656,27 @@ It works, but it is not recommended. Cache it in `Start` / `Awake`.
 Initialization is deferred and occurs on the first `Instance` / `TryGetInstance` access. It still runs, but the timing becomes unexpectedly late, so always call the base method.
 
 **Q. What happens if I forget to place a SceneSingleton in the scene?**
-DEV/EDITOR throws an exception; Player builds return `null` / `false`. GlobalSingleton auto-creates if not found.
+DEV/EDITOR/ASSERTIONS throws an exception; Player builds return `null` / `false` when guards are stripped. GlobalSingleton auto-creates if not found.
+
+**Q. Fail-fast exceptions occur in a Player build (not only in the Editor).**
+Assertions might be enabled in that Player build (for example by using `BuildOptions.ForceEnableAssertions`, which includes assertions outside Development builds). Disable assertions for the build or adjust which guards are conditioned on `UNITY_ASSERTIONS`.
 
 ### Built-in Debug Logging
 
-The library outputs debug logs in `UNITY_EDITOR` and `DEVELOPMENT_BUILD` only (stripped in release builds):
+The library outputs debug logs when at least one of these symbols is defined: `UNITY_EDITOR`, `DEVELOPMENT_BUILD`, `UNITY_ASSERTIONS` (calls are stripped otherwise).
 
-| Level | Message | Trigger |
-|-------|---------|--------|
-| **Log** | `OnPlaySessionStart invoked.` | When a singleton's per-session initialization runs |
-| **Log** | `Instance access blocked: application is quitting.` | When `Instance` returns null due to quitting |
-| **Log** | `TryGetInstance blocked: application is quitting.` | When `TryGetInstance` returns false due to quitting |
-| **Warning** | `Auto-created.` | When a GlobalSingleton is auto-created |
-| **Warning** | `Duplicate detected.` | When a duplicate singleton is destroyed |
-| **Warning** | `Reparented to root for DontDestroyOnLoad.` | When a persistent singleton under a parent is reparented |
-| **Error** | `base.Awake() was not called` | When a subclass forgets to call `base.Awake()` |
-| **Error** | `Type mismatch` | When a derived class is found instead of exact type |
+| Level       | Message                                             | Trigger                                                  |
+| ----------- | --------------------------------------------------- | -------------------------------------------------------- |
+| **Log**     | `OnPlaySessionStart invoked.`                       | When a singleton's per-session initialization runs       |
+| **Log**     | `Instance access blocked: application is quitting.` | When `Instance` returns null due to quitting             |
+| **Log**     | `TryGetInstance blocked: application is quitting.`  | When `TryGetInstance` returns false due to quitting      |
+| **Warning** | `Auto-created.`                                     | When a GlobalSingleton is auto-created                   |
+| **Warning** | `Duplicate detected.`                               | When a duplicate singleton is destroyed                  |
+| **Warning** | `Reparented to root for DontDestroyOnLoad.`         | When a persistent singleton under a parent is reparented |
+| **Error**   | `base.Awake() was not called`                       | When a subclass forgets to call `base.Awake()`           |
+| **Error**   | `Type mismatch`                                     | When a derived class is found instead of exact type      |
+
+> Note: Enabling assertions in a Player build (`UNITY_ASSERTIONS`) can keep some fail-fast guards active and can also enable debug logging (by design).
 
 ### Debugging Tips
 
@@ -686,6 +706,15 @@ RuntimeInitializeOnLoadMethodAttribute (Scripting API)
 RuntimeInitializeLoadType.SubsystemRegistration (Scripting API)
 [https://docs.unity3d.com/6000.3/Documentation/ScriptReference/RuntimeInitializeLoadType.SubsystemRegistration.html](https://docs.unity3d.com/6000.3/Documentation/ScriptReference/RuntimeInitializeLoadType.SubsystemRegistration.html)
 
+Object.FindAnyObjectByType (Scripting API)
+[https://docs.unity3d.com/2023.1/Documentation/ScriptReference/Object.FindAnyObjectByType.html](https://docs.unity3d.com/2023.1/Documentation/ScriptReference/Object.FindAnyObjectByType.html)
+
+FindObjectsInactive (Scripting API)
+[https://docs.unity3d.com/2022.3/Documentation/ScriptReference/FindObjectsInactive.html](https://docs.unity3d.com/2022.3/Documentation/ScriptReference/FindObjectsInactive.html)
+
+Object.Destroy (Scripting API)
+[https://docs.unity3d.com/6000.3/Documentation/ScriptReference/Object.Destroy.html](https://docs.unity3d.com/6000.3/Documentation/ScriptReference/Object.Destroy.html)
+
 Object.DontDestroyOnLoad (Scripting API)
 [https://docs.unity3d.com/6000.3/Documentation/ScriptReference/Object.DontDestroyOnLoad.html](https://docs.unity3d.com/6000.3/Documentation/ScriptReference/Object.DontDestroyOnLoad.html)
 
@@ -695,10 +724,17 @@ Application.quitting (Scripting API)
 DefaultExecutionOrder (Scripting API)
 [https://docs.unity3d.com/6000.3/Documentation/ScriptReference/DefaultExecutionOrder.html](https://docs.unity3d.com/6000.3/Documentation/ScriptReference/DefaultExecutionOrder.html)
 
+BuildOptions.ForceEnableAssertions (Scripting API)
+[https://docs.unity3d.com/6000.2/Documentation/ScriptReference/BuildOptions.ForceEnableAssertions.html](https://docs.unity3d.com/6000.2/Documentation/ScriptReference/BuildOptions.ForceEnableAssertions.html)
+
+C# Conditional attribute (Microsoft Docs)
+[https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/attributes/general](https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/attributes/general)
+
 Unity Issue Tracker: RuntimeInitializeOnLoadMethodAttribute not invoked if class is generic
 [https://issuetracker.unity3d.com/issues/runtimeinitializeonloadmethodattribute-not-invoked-if-class-is-generic](https://issuetracker.unity3d.com/issues/runtimeinitializeonloadmethodattribute-not-invoked-if-class-is-generic)
 
 ## Changelog
+
 See [CHANGELOG.md](./CHANGELOG.md)
 
 ## License
